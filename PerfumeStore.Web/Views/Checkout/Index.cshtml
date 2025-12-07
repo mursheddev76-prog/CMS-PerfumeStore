@@ -1,0 +1,127 @@
+@model PerfumeStore.Web.Models.ViewModels.CheckoutPageViewModel
+@{
+    ViewData["Title"] = "Secure Checkout";
+    var resultMessage = TempData["CheckoutResult"]?.ToString();
+    var resultSuccess = TempData["CheckoutIsSuccess"]?.ToString();
+    var orderNumber = TempData["OrderNumber"]?.ToString();
+}
+
+<section class="container my-5 checkout-page">
+    <div class="row g-5">
+        <div class="col-lg-7">
+            <h1>Checkout</h1>
+            <p class="text-muted">Payment and delivery options come straight from the admin config.</p>
+
+            @if (!string.IsNullOrEmpty(resultMessage))
+            {
+                var alertClass = resultSuccess == "True" ? "alert-success" : "alert-danger";
+                <div class="alert @alertClass">
+                    <strong>@resultMessage</strong>
+                    @if (!string.IsNullOrEmpty(orderNumber))
+                    {
+                        <span> Order: <code>@orderNumber</code></span>
+                    }
+                </div>
+            }
+
+            <form asp-action="PlaceOrder" method="post">
+                @Html.AntiForgeryToken()
+                <div asp-validation-summary="ModelOnly" class="text-danger"></div>
+                <h4>Contact</h4>
+                <div class="row g-3 mb-4">
+                    <div class="col-md-6">
+                        <label asp-for="Request.CustomerName" class="form-label"></label>
+                        <input asp-for="Request.CustomerName" class="form-control" />
+                        <span asp-validation-for="Request.CustomerName" class="text-danger"></span>
+                    </div>
+                    <div class="col-md-6">
+                        <label asp-for="Request.CustomerEmail" class="form-label"></label>
+                        <input asp-for="Request.CustomerEmail" class="form-control" />
+                        <span asp-validation-for="Request.CustomerEmail" class="text-danger"></span>
+                    </div>
+                </div>
+
+                <h4>Delivery</h4>
+                <div class="mb-4">
+                    <label asp-for="Request.ShippingAddress" class="form-label"></label>
+                    <textarea asp-for="Request.ShippingAddress" rows="3" class="form-control"></textarea>
+                    <span asp-validation-for="Request.ShippingAddress" class="text-danger"></span>
+                </div>
+                <div class="mb-4">
+                    <label class="form-label">Choose delivery option</label>
+                    @foreach (var option in Model.DeliveryOptions)
+                    {
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" asp-for="Request.DeliveryOptionId" value="@option.Id" />
+                            <label class="form-check-label">
+                                <strong>@option.Name</strong> — @option.Description
+                                <small class="text-muted">(ETA: @option.EstimatedDays day(s), @option.Fee.ToString("C"))</small>
+                            </label>
+                        </div>
+                    }
+                    <span asp-validation-for="Request.DeliveryOptionId" class="text-danger"></span>
+                </div>
+
+                <h4>Payment</h4>
+                <div class="mb-4">
+                    @foreach (var method in Model.PaymentMethods)
+                    {
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" asp-for="Request.PaymentMethodId" value="@method.Id" />
+                            <label class="form-check-label">
+                                <strong>@method.Name</strong> — @method.Provider
+                                <small class="text-muted">(Fee: @method.ProcessingFee.ToString("C"))</small>
+                            </label>
+                        </div>
+                    }
+                    <span asp-validation-for="Request.PaymentMethodId" class="text-danger"></span>
+                </div>
+
+                @for (var i = 0; i < Model.Request.Items.Count; i++)
+                {
+                    <input type="hidden" asp-for="Request.Items[i].ProductId" />
+                    <input type="hidden" asp-for="Request.Items[i].Quantity" />
+                }
+
+                <button class="btn btn-dark btn-lg" type="submit">Place order</button>
+            </form>
+        </div>
+
+        <div class="col-lg-5">
+            <div class="card shadow-sm">
+                <div class="card-header bg-white">
+                    <h4>Your ritual</h4>
+                    <small>Cart preview generated from featured products.</small>
+                </div>
+                <div class="card-body">
+                    @foreach (var product in Model.CartProducts)
+                    {
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <div>
+                                <strong>@product.Name</strong>
+                                <p class="text-muted mb-0">@product.Category</p>
+                            </div>
+                            <span>@(product.DiscountPrice ?? product.Price).ToString("C")</span>
+                        </div>
+                    }
+                </div>
+                <div class="card-footer bg-white">
+                    <div class="d-flex justify-content-between">
+                        <span>Subtotal</span>
+                        <strong>@Model.Subtotal.ToString("C")</strong>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <span>Est. total*</span>
+                        <strong>@Model.EstimatedTotal.ToString("C")</strong>
+                    </div>
+                    <p class="text-muted mt-2 mb-0 small">*Final total depends on admin-managed delivery & payment fees.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}
+

@@ -1,0 +1,291 @@
+@model PerfumeStore.Web.Models.ViewModels.AdminDashboardViewModel
+@{
+    ViewData["Title"] = "Admin Command Center";
+    var message = TempData["AdminMessage"]?.ToString();
+}
+
+<section class="container my-5 admin-dashboard">
+    <div class="d-flex flex-column flex-lg-row align-items-lg-center justify-content-between gap-3 mb-4">
+        <div>
+            <p class="eyebrow text-uppercase text-muted">Operations</p>
+            <h1>Perfume store control tower</h1>
+            <p>Manage hero banners, product lineup, payments, delivery windows. All persisted in Postgres via stored procedures.</p>
+        </div>
+        <a class="btn btn-outline-dark" href="/">View customer-facing landing →</a>
+    </div>
+
+    @if (!string.IsNullOrEmpty(message))
+    {
+        <div class="alert alert-success">@message</div>
+    }
+
+    <div class="row g-4 mb-5">
+        <div class="col-md-2">
+            <div class="stat-card">
+                <p>Products</p>
+                <h3>@Model.Stats.ActiveProducts</h3>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="stat-card">
+                <p>Payments</p>
+                <h3>@Model.Stats.ActivePaymentMethods</h3>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="stat-card">
+                <p>Delivery</p>
+                <h3>@Model.Stats.ActiveDeliveryOptions</h3>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stat-card">
+                <p>Today revenue</p>
+                <h3>@Model.Stats.TodayRevenue.ToString("C")</h3>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stat-card">
+                <p>Pending orders</p>
+                <h3>@Model.Stats.PendingOrders</h3>
+            </div>
+        </div>
+    </div>
+
+    <div class="card shadow-sm mb-5">
+        <div class="card-header bg-white">
+            <h2 class="h4 mb-0">Hero section</h2>
+            <small>Drive campaign updates without deployments.</small>
+        </div>
+        <div class="card-body">
+            <form asp-action="SaveHero" method="post" enctype="multipart/form-data">
+                @Html.AntiForgeryToken()
+                <div asp-validation-summary="ModelOnly" class="text-danger"></div>
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label asp-for="Hero.Title" class="form-label"></label>
+                        <input asp-for="Hero.Title" class="form-control" />
+                        <span asp-validation-for="Hero.Title" class="text-danger"></span>
+                    </div>
+                    <div class="col-md-6">
+                        <label asp-for="Hero.Subtitle" class="form-label"></label>
+                        <input asp-for="Hero.Subtitle" class="form-control" />
+                        <span asp-validation-for="Hero.Subtitle" class="text-danger"></span>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Background Image</label>
+
+                        <!-- Existing URL textbox -->
+                        <input asp-for="Hero.BackgroundImageUrl" class="form-control mb-2" placeholder="Existing URL (optional)" />
+
+                        <!-- File upload -->
+                        <input type="file" name="HeroBackgroundImage" class="form-control" />
+                        <small class="text-muted">Upload JPG/PNG. If skipped, old image remains.</small>
+                    </div>
+                    <div class="col-md-3">
+                        <label asp-for="Hero.PrimaryCtaText" class="form-label"></label>
+                        <input asp-for="Hero.PrimaryCtaText" class="form-control" />
+                    </div>
+                    <div class="col-md-3">
+                        <label asp-for="Hero.PrimaryCtaLink" class="form-label"></label>
+                        <input asp-for="Hero.PrimaryCtaLink" class="form-control" />
+                    </div>
+                    <div class="col-md-3">
+                        <label asp-for="Hero.SecondaryCtaText" class="form-label"></label>
+                        <input asp-for="Hero.SecondaryCtaText" class="form-control" />
+                    </div>
+                    <div class="col-md-3">
+                        <label asp-for="Hero.SecondaryCtaLink" class="form-label"></label>
+                        <input asp-for="Hero.SecondaryCtaLink" class="form-control" />
+                    </div>
+                </div>
+                <div class="mt-4 text-end">
+                    <button class="btn btn-dark" type="submit">Save hero</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="card shadow-sm mb-5">
+        <div class="card-header bg-white">
+            <h2 class="h4 mb-0">Product lineup</h2>
+            <small>Full CRUD flows handled via stored procedure `sp_product_upsert`.</small>
+        </div>
+        <div class="card-body">
+            <form asp-action="SaveProduct" method="post">
+                @Html.AntiForgeryToken()
+                <input asp-for="ProductForm.Id" type="hidden" />
+                <div class="row g-3">
+                    <div class="col-md-5">
+                        <label asp-for="ProductForm.Name" class="form-label"></label>
+                        <input asp-for="ProductForm.Name" class="form-control" />
+                    </div>
+                    <div class="col-md-7">
+                        <label asp-for="ProductForm.Description" class="form-label"></label>
+                        <input asp-for="ProductForm.Description" class="form-control" />
+                    </div>
+                    <div class="col-md-3">
+                        <label asp-for="ProductForm.Price" class="form-label"></label>
+                        <input asp-for="ProductForm.Price" class="form-control" type="number" step="0.01" />
+                    </div>
+                    <div class="col-md-3">
+                        <label asp-for="ProductForm.DiscountPrice" class="form-label"></label>
+                        <input asp-for="ProductForm.DiscountPrice" class="form-control" type="number" step="0.01" />
+                    </div>
+                    <div class="col-md-3">
+                        <label asp-for="ProductForm.CategoryId" class="form-label">Category</label>
+                        <select asp-for="ProductForm.CategoryId" class="form-select">
+                            @foreach (var category in Model.Categories)
+                            {
+                                <option value="@category.Id">@category.Name</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label asp-for="ProductForm.StockQuantity" class="form-label"></label>
+                        <input asp-for="ProductForm.StockQuantity" class="form-control" type="number" />
+                    </div>
+                    <div class="col-md-6">
+                        <label asp-for="ProductForm.ImageUrl" class="form-label"></label>
+                        <input asp-for="ProductForm.ImageUrl" class="form-control" />
+                    </div>
+                    <div class="col-md-3 form-check mt-4 ms-3">
+                        <input asp-for="ProductForm.IsFeatured" class="form-check-input" type="checkbox" />
+                        <label asp-for="ProductForm.IsFeatured" class="form-check-label">Featured</label>
+                    </div>
+                    <div class="col-md-3 form-check mt-4">
+                        <input asp-for="ProductForm.IsTrending" class="form-check-input" type="checkbox" />
+                        <label asp-for="ProductForm.IsTrending" class="form-check-label">Trending</label>
+                    </div>
+                </div>
+                <div class="mt-4 text-end">
+                    <button class="btn btn-dark" type="submit">Save product</button>
+                </div>
+            </form>
+
+            <div class="table-responsive mt-4">
+                <table class="table table-sm align-middle">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Category</th>
+                            <th>Price</th>
+                            <th>Featured</th>
+                            <th>Trending</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var product in Model.Products)
+                        {
+                            <tr>
+                                <td>@product.Name</td>
+                                <td>@product.CategoryName</td>
+                                <td>@product.Price.ToString("C")</td>
+                                <td>@(product.IsFeatured ? "Yes" : "No")</td>
+                                <td>@(product.IsTrending ? "Yes" : "No")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <div class="col-lg-6">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-white">
+                    <h2 class="h4 mb-0">Payment rails</h2>
+                    <small>Expose wallets, BNPL or cards instantly.</small>
+                </div>
+                <div class="card-body">
+                    <form asp-action="SavePayment" method="post">
+                        @Html.AntiForgeryToken()
+                        <input asp-for="PaymentForm.Id" type="hidden" />
+                        <div class="mb-3">
+                            <label asp-for="PaymentForm.Name" class="form-label"></label>
+                            <input asp-for="PaymentForm.Name" class="form-control" />
+                        </div>
+                        <div class="mb-3">
+                            <label asp-for="PaymentForm.Provider" class="form-label"></label>
+                            <input asp-for="PaymentForm.Provider" class="form-control" />
+                        </div>
+                        <div class="mb-3">
+                            <label asp-for="PaymentForm.ProcessingFee" class="form-label"></label>
+                            <input asp-for="PaymentForm.ProcessingFee" class="form-control" type="number" step="0.01" />
+                        </div>
+                        <div class="form-check form-switch mb-3">
+                            <input asp-for="PaymentForm.SupportsInstallments" class="form-check-input" type="checkbox" />
+                            <label asp-for="PaymentForm.SupportsInstallments" class="form-check-label">Installments</label>
+                        </div>
+                        <div class="form-check form-switch mb-3">
+                            <input asp-for="PaymentForm.IsActive" class="form-check-input" type="checkbox" />
+                            <label asp-for="PaymentForm.IsActive" class="form-check-label">Active</label>
+                        </div>
+                        <button class="btn btn-dark" type="submit">Save payment method</button>
+                    </form>
+                    <ul class="list-group list-group-flush mt-3">
+                        @foreach (var payment in Model.PaymentMethods)
+                        {
+                            <li class="list-group-item d-flex justify-content-between">
+                                <span>@payment.Name <small class="text-muted">(@payment.Provider)</small></span>
+                                <span>@payment.ProcessingFee.ToString("C")</span>
+                            </li>
+                        }
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-6">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-white">
+                    <h2 class="h4 mb-0">Delivery promise</h2>
+                    <small>Adjust speed windows and fees on demand.</small>
+                </div>
+                <div class="card-body">
+                    <form asp-action="SaveDelivery" method="post">
+                        @Html.AntiForgeryToken()
+                        <input asp-for="DeliveryForm.Id" type="hidden" />
+                        <div class="mb-3">
+                            <label asp-for="DeliveryForm.Name" class="form-label"></label>
+                            <input asp-for="DeliveryForm.Name" class="form-control" />
+                        </div>
+                        <div class="mb-3">
+                            <label asp-for="DeliveryForm.Description" class="form-label"></label>
+                            <input asp-for="DeliveryForm.Description" class="form-control" />
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label asp-for="DeliveryForm.Fee" class="form-label"></label>
+                                <input asp-for="DeliveryForm.Fee" class="form-control" type="number" step="0.01" />
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label asp-for="DeliveryForm.EstimatedDays" class="form-label"></label>
+                                <input asp-for="DeliveryForm.EstimatedDays" class="form-control" type="number" />
+                            </div>
+                        </div>
+                        <div class="form-check form-switch mb-3">
+                            <input asp-for="DeliveryForm.IsActive" class="form-check-input" type="checkbox" />
+                            <label asp-for="DeliveryForm.IsActive" class="form-check-label">Active</label>
+                        </div>
+                        <button class="btn btn-dark" type="submit">Save delivery option</button>
+                    </form>
+                    <ul class="list-group list-group-flush mt-3">
+                        @foreach (var delivery in Model.DeliveryOptions)
+                        {
+                            <li class="list-group-item d-flex justify-content-between">
+                                <span>@delivery.Name <small class="text-muted">(@delivery.EstimatedDays day)</small></span>
+                                <span>@delivery.Fee.ToString("C")</span>
+                            </li>
+                        }
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}
+

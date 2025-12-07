@@ -1,0 +1,225 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: "Space Grotesk", "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #0b0b0f;
+  background-color: #fdfcfb;
+}
+
+a {
+  text-decoration: none;
+}
+
+.site-header {
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  background-color: #fff;
+}
+
+.navbar-brand span {
+  color: #c68740;
+}
+
+.hero {
+  position: relative;
+  padding: 7rem 0;
+  background-size: cover;
+  background-position: center;
+}
+
+.hero-overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg, rgba(7, 6, 4, 0.85), rgba(7, 6, 4, 0.4));
+}
+
+.hero-content {
+  position: relative;
+  z-index: 2;
+}
+
+.hero h1 {
+  font-size: clamp(2.5rem, 6vw, 4.5rem);
+  font-weight: 600;
+}
+
+.hero-ctas .btn {
+  border-radius: 999px;
+  padding-inline: 2rem;
+}
+
+.hero-highlights {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  justify-content: center;
+  font-size: 0.9rem;
+  opacity: 0.85;
+}
+
+.section-heading h2 {
+  font-weight: 600;
+}
+
+.product-card {
+  background: #fff;
+  border-radius: 1.5rem;
+  overflow: hidden;
+  box-shadow: 0 20px 50px rgba(8, 11, 20, 0.08);
+  border: 1px solid rgba(12, 8, 4, 0.05);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.product-image {
+  padding-top: 65%;
+  background-size: cover;
+  background-position: center;
+  position: relative;
+}
+
+.product-image .badge {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+}
+
+.product-body {
+  padding: 1.5rem;
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.pricing {
+  font-size: 1.1rem;
+  display: flex;
+  gap: 0.75rem;
+  align-items: baseline;
+}
+
+.price-original {
+  text-decoration: line-through;
+  color: #8f8f97;
+}
+
+.price-discount {
+  font-weight: 600;
+  color: #c68740;
+}
+
+.fulfillment-badge {
+  padding: 2rem;
+  border-radius: 1rem;
+  background: #fff;
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.05);
+}
+
+.fulfillment-badge i {
+  font-size: 2rem;
+  color: #c68740;
+}
+
+.cta-panel {
+  background: linear-gradient(120deg, #0b0907, #2b1b12);
+  padding: 4rem 0;
+}
+
+.eyebrow {
+  letter-spacing: 0.4rem;
+  font-size: 0.75rem;
+}
+
+.stat-card {
+  background: #fff;
+  border-radius: 1rem;
+  padding: 1.5rem;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+}
+
+.stat-card p {
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  letter-spacing: 0.2rem;
+  color: #8b8b91;
+}
+
+.stat-card h3 {
+  font-weight: 600;
+}
+
+.admin-dashboard form .form-label {
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1rem;
+}
+
+.catalog-filters .btn {
+  border-radius: 999px;
+  text-transform: capitalize;
+}
+
+.catalog-search input {
+  border-radius: 999px;
+}
+
+.checkout-page .card {
+  border-radius: 1.5rem;
+}
+
+.site-footer {
+  padding: 2rem 0;
+  background: #0b0b0f;
+  color: rgba(255, 255, 255, 0.8);
+  margin-top: 4rem;
+}
+
+.site-footer a {
+  color: rgba(255, 255, 255, 0.8);
+  margin-left: 1rem;
+}
+
+.quick-view-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(5, 5, 5, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  padding: 1rem;
+}
+
+.quick-view-modal {
+  background: #fff;
+  max-width: 500px;
+  width: 100%;
+  border-radius: 1.5rem;
+  padding: 2rem;
+  position: relative;
+  text-align: center;
+}
+
+.quick-view-modal img {
+  width: 100%;
+  border-radius: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.quick-view-close {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  background: transparent;
+  border: none;
+  font-size: 2rem;
+  line-height: 1;
+}
+
+@media (max-width: 992px) {
+  .hero {
+    padding: 5rem 0;
+  }
+}

@@ -1,0 +1,141 @@
+@model PerfumeStore.Web.Models.ViewModels.LandingPageViewModel
+
+@{
+    ViewData["Title"] = "Perfume Atelier – Luxury Fragrances";
+}
+
+<!-- Hero Section -->
+<section class="hero" style="background-image:url('@Model.Hero.BackgroundImageUrl'); background-size:cover;">
+    <div class="hero-overlay"></div>
+    <div class="hero-content container text-center text-white">
+        <p class="eyebrow text-uppercase">Luxury · Artisan Scents</p>
+        <h1 class="display-4 fw-bold">@Model.Hero.Title</h1>
+        <p class="lead">@Model.Hero.Subtitle</p>
+
+        <div class="hero-ctas mt-3">
+            <a class="btn btn-lg btn-primary me-2" href="@Model.Hero.PrimaryCtaLink">@Model.Hero.PrimaryCtaText</a>
+            <a class="btn btn-lg btn-outline-light" href="@Model.Hero.SecondaryCtaLink">@Model.Hero.SecondaryCtaText</a>
+        </div>
+
+        <div class="hero-highlights mt-4">
+            @foreach (var highlight in Model.CustomerHighlights)
+            {
+                <span class="badge bg-light text-dark mx-1">@highlight</span>
+            }
+        </div>
+    </div>
+</section>
+
+<!-- Featured Products -->
+<section class="container my-5">
+    <div class="section-heading d-flex justify-content-between align-items-center">
+        <div>
+            <h2 class="fw-bold">Featured Scents</h2>
+            <p class="text-muted">Hand-picked by our master perfumer. Updated live from the admin panel.</p>
+        </div>
+        <a class="btn btn-link" href="/catalog">Browse full collection →</a>
+    </div>
+
+    <div class="row g-4">
+        @foreach (var product in Model.Featured)
+        {
+            <div class="col-md-4">
+                <article class="product-card shadow-sm">
+                    <div class="product-image" style="background-image:url('@product.ImageUrl')">
+                        @if (product.IsNewArrival)
+                        {
+                            <span class="badge bg-warning text-dark">New</span>
+                        }
+                    </div>
+
+                    <div class="product-body p-3">
+                        <p class="text-muted text-uppercase small">@product.Category</p>
+                        <h3 class="h5">@product.Name</h3>
+                        <p class="small">@product.Description</p>
+
+                        <div class="pricing mt-2">
+                            @if (product.DiscountPrice.HasValue)
+                            {
+                                <span class="text-danger fw-bold">@product.DiscountPrice.Value.ToString("C")</span>
+                                <span class="text-muted text-decoration-line-through ms-2">@product.Price.ToString("C")</span>
+                            }
+                            else
+                            {
+                                <span class="fw-bold">@product.Price.ToString("C")</span>
+                            }
+                        </div>
+
+                        <div class="d-flex gap-2 mt-3">
+                            <a class="btn btn-dark flex-grow-1" href="/checkout">Add to Cart</a>
+                            <button class="btn btn-outline-secondary" data-product-id="@product.Id" data-role="quick-view">
+                                <i class="bi bi-eye"></i>
+                            </button>
+                        </div>
+                    </div>
+                </article>
+            </div>
+        }
+    </div>
+</section>
+
+<!-- Trending Section -->
+<section class="bg-light py-5">
+    <div class="container">
+        <div class="section-heading text-center mb-4">
+            <h2 class="fw-bold">Trending Now</h2>
+            <p class="text-muted">Best-selling fragrances powered by real-time analytics.</p>
+        </div>
+
+        <div class="row g-4">
+            @foreach (var product in Model.Trending)
+            {
+                <div class="col-md-3">
+                    <article class="card h-100 shadow-sm">
+                        <div class="card-body">
+                            <p class="text-muted text-uppercase small">@product.Category</p>
+                            <h4 class="h6 fw-bold">@product.Name</h4>
+                            <p class="small text-truncate">@product.Description</p>
+                            <strong>@(product.DiscountPrice ?? product.Price).ToString("C")</strong>
+                        </div>
+
+                        <div class="card-footer bg-transparent border-0">
+                            <a class="btn btn-outline-dark w-100" href="/catalog?q=@product.Name">Shop now</a>
+                        </div>
+                    </article>
+                </div>
+            }
+        </div>
+    </div>
+</section>
+
+<!-- Fulfillment Badges -->
+<section class="container my-5">
+    <div class="row text-center">
+        @foreach (var badge in Model.FulfillmentBadges)
+        {
+            <div class="col-md-4 mb-4">
+                <div class="fulfillment-badge">
+                    <i class="bi @badge.Icon fs-1 mb-3"></i>
+                    <h5>@badge.Title</h5>
+                    <p class="text-muted">@badge.Caption</p>
+                </div>
+            </div>
+        }
+    </div>
+</section>
+
+<!-- CTA Section -->
+<section class="cta-panel text-center text-white py-5">
+    <div class="container">
+        <p class="eyebrow text-uppercase">Bespoke Studio</p>
+        <h2 class="fw-bold">Need personalized scent matching or premium gifting?</h2>
+        <p>Admin panel updates these offers instantly.</p>
+        <a class="btn btn-outline-light btn-lg" href="/checkout">Book Your Consultation</a>
+    </div>
+</section>
+
+
+
+@section Scripts {
+    <script src="/js/landing.js"></script>
+}

@@ -1,0 +1,60 @@
+@model IReadOnlyCollection<PerfumeStore.Web.Models.ViewModels.ProductCardViewModel>
+@{
+    ViewData["Title"] = "Shop Catalog";
+    var categories = ViewData["Categories"] as IReadOnlyCollection<string> ?? Array.Empty<string>();
+    var currentCategory = ViewData["CurrentCategory"]?.ToString() ?? "all";
+    var query = ViewData["Query"]?.ToString() ?? string.Empty;
+}
+
+<section class="container my-5">
+    <div class="d-flex flex-column flex-lg-row align-items-lg-center justify-content-between gap-3 mb-4">
+        <div>
+            <p class="eyebrow text-uppercase">Live catalog</p>
+            <h1>Explore every scent family</h1>
+            <p class="text-muted">Filters powered by ASP.NET 8 + Postgres + Dapper.</p>
+        </div>
+        <form class="catalog-search d-flex gap-2" method="get">
+            <input type="hidden" name="category" value="@currentCategory" />
+            <input class="form-control" type="search" name="q" placeholder="Search by note, mood, perfumer..." value="@query" />
+            <button class="btn btn-dark" type="submit">Search</button>
+        </form>
+    </div>
+
+    <div class="catalog-filters mb-4 d-flex flex-wrap gap-2">
+        <a class="btn btn-sm @(currentCategory == "all" ? "btn-dark" : "btn-outline-secondary")" href="?category=all">All</a>
+        @foreach (var category in categories)
+        {
+            var css = category.Equals(currentCategory, StringComparison.OrdinalIgnoreCase) ? "btn-dark" : "btn-outline-secondary";
+            <a class="btn btn-sm @css" href="?category=@category">@category</a>
+        }
+    </div>
+
+    <div class="row g-4">
+        @foreach (var product in Model)
+        {
+            <div class="col-md-4">
+                <article class="product-card">
+                    <div class="product-image" style="background-image:url('@product.ImageUrl')"></div>
+                    <div class="product-body">
+                        <p class="text-uppercase text-muted small">@product.Category</p>
+                        <h3>@product.Name</h3>
+                        <p>@product.Description</p>
+                        <div class="pricing">
+                            @if (product.DiscountPrice.HasValue)
+                            {
+                                <span class="price-discount">@product.DiscountPrice.Value.ToString("C")</span>
+                                <span class="price-original">@product.Price.ToString("C")</span>
+                            }
+                            else
+                            {
+                                <span class="price">@product.Price.ToString("C")</span>
+                            }
+                        </div>
+                        <a class="btn btn-outline-dark w-100 mt-3" href="/checkout">Add to cart</a>
+                    </div>
+                </article>
+            </div>
+        }
+    </div>
+</section>
+
