@@ -2,17 +2,39 @@ using HealthChecks.NpgSql;
 using PerfumeStore.Web.Data;
 using PerfumeStore.Web.Data.Repositories;
 using PerfumeStore.Web.Services;
+using Microsoft.AspNetCore.Authentication.Cookies;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.Configure<DatabaseOptions>(builder.Configuration.GetSection(DatabaseOptions.SectionName));
 builder.Services.AddSingleton<IDbConnectionFactory, NpgsqlConnectionFactory>();
 builder.Services.AddScoped<ICommerceRepository, CommerceRepository>();
+builder.Services.AddDistributedMemoryCache();
+builder.Services.AddSession(options =>
+{
+    options.Cookie.Name = ".Perfumier.Session";
+    options.Cookie.HttpOnly = true;
+    options.Cookie.IsEssential = true;
+    options.IdleTimeout = TimeSpan.FromHours(2);
+});
 
 builder.Services.AddScoped<LandingPageService>();
 builder.Services.AddScoped<CatalogService>();
 builder.Services.AddScoped<CheckoutService>();
 builder.Services.AddScoped<AdminService>();
+
+builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+    .AddCookie(options =>
+    {
+        options.LoginPath = "/Account/Login";
+        options.AccessDeniedPath = "/Account/AccessDenied";
+    });
+
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("Admin", policy => policy.RequireRole("admin"));
+});
+
 
 builder.Services.AddControllersWithViews().AddRazorRuntimeCompilation();
 builder.Services.AddResponseCaching();
@@ -35,6 +57,11 @@ if (!app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 app.UseStaticFiles();
 app.UseRouting();
+app.UseSession();
+
+app.UseAuthentication();
+app.UseAuthorization();
+
 app.UseResponseCaching();
 
 app.MapHealthChecks("/healthz");
@@ -42,5 +69,11 @@ app.MapHealthChecks("/healthz");
 app.MapControllerRoute(
     name: "default",
     pattern: "{controller=Landing}/{action=Index}/{id?}");
+
+app.MapControllerRoute(
+    name: "admin",
+    pattern: "admin/{*action}",
+    defaults: new { controller = "Admin" }
+).RequireAuthorization("Admin");
 
 app.Run();

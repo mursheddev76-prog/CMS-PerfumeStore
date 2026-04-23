@@ -1,6 +1,7 @@
 using System.Data;
 using Dapper;
 using Microsoft.Extensions.Options;
+using Npgsql;
 using PerfumeStore.Web.Models.Domain;
 
 namespace PerfumeStore.Web.Data.Repositories;
@@ -16,12 +17,14 @@ public interface ICommerceRepository
     Task<HeroContent> GetHeroContentAsync(CancellationToken cancellationToken);
     Task<AdminDashboardStats> GetDashboardStatsAsync(CancellationToken cancellationToken);
     Task UpsertProductAsync(Product product, CancellationToken cancellationToken);
+    Task UpsertCategoryAsync(Category category, CancellationToken cancellationToken);
     Task UpsertPaymentMethodAsync(PaymentMethod method, CancellationToken cancellationToken);
     Task UpsertDeliveryOptionAsync(DeliveryOption option, CancellationToken cancellationToken);
     Task UpsertHeroContentAsync(HeroContent hero, CancellationToken cancellationToken);
     Task<(bool Success, string? OrderNumber)> CreateOrderAsync(
         CheckoutPayload payload,
         CancellationToken cancellationToken);
+    Task<User?> GetUserByUsernameAsync(string username, CancellationToken cancellationToken);
 }
 
 public sealed class CommerceRepository : ICommerceRepository
@@ -129,26 +132,106 @@ public sealed class CommerceRepository : ICommerceRepository
         await ExecuteAsync(StoredProcedures.HeroContentUpsert, parameters, cancellationToken);
     }
 
+    public async Task UpsertCategoryAsync(Category category, CancellationToken cancellationToken)
+    {
+        using var connection = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken);
+        
+        string sql;
+        var parameters = new DynamicParameters();
+
+        if (category.Id == 0)
+        {
+            // Insert new category (let database auto-generate id)
+            sql = @"insert into categories (name, description, is_active)
+                    values (@Name, @Description, @IsActive);";
+        }
+        else
+        {
+            // Update existing category
+            sql = @"insert into categories (id, name, description, is_active)
+                    values (@Id, @Name, @Description, @IsActive)
+                    on conflict (id) do update set
+                        name = excluded.name,
+                        description = excluded.description,
+                        is_active = excluded.is_active;";
+            parameters.Add("Id", category.Id);
+        }
+
+        parameters.Add("Name", category.Name);
+        parameters.Add("Description", category.Description);
+        parameters.Add("IsActive", category.IsActive);
+
+        await connection.ExecuteAsync(new CommandDefinition(
+            sql,
+            parameters,
+            commandType: CommandType.Text,
+            cancellationToken: cancellationToken,
+            commandTimeout: _commandTimeout));
+    }
+
     public async Task<(bool Success, string? OrderNumber)> CreateOrderAsync(
         CheckoutPayload payload,
         CancellationToken cancellationToken)
     {
-        var parameters = new DynamicParameters();
-        parameters.Add("p_customer_name", payload.CustomerName);
-        parameters.Add("p_customer_email", payload.CustomerEmail);
-        parameters.Add("p_shipping_address", payload.ShippingAddress);
-        parameters.Add("p_payment_method_id", payload.PaymentMethodId);
-        parameters.Add("p_delivery_option_id", payload.DeliveryOptionId);
-        parameters.Add("p_subtotal", payload.Subtotal);
-        parameters.Add("p_delivery_fee", payload.DeliveryFee);
-        parameters.Add("p_processing_fee", payload.ProcessingFee);
-        parameters.Add("p_total", payload.Total);
-        parameters.Add("p_items", payload.BuildItemsTableValuedParameter());
-        parameters.Add("p_order_number", dbType: DbType.String, size: 32, direction: ParameterDirection.Output);
+        await using var connection = (NpgsqlConnection)await _connectionFactory.CreateOpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(
+            $"""
+            call {StoredProcedures.OrderCreate}(
+                @p_customer_name,
+                @p_customer_email,
+                @p_shipping_address,
+                @p_payment_method_id,
+                @p_delivery_option_id,
+                @p_subtotal,
+                @p_delivery_fee,
+                @p_processing_fee,
+                @p_total,
+                cast(@p_items as order_item_type[]),
+                null
+            )
+            """,
+            connection)
+        {
+            CommandType = CommandType.Text,
+            CommandTimeout = _commandTimeout
+        };
 
-        await ExecuteAsync(StoredProcedures.OrderCreate, parameters, cancellationToken);
-        var orderNumber = parameters.Get<string>("p_order_number");
+        command.Parameters.AddWithValue("p_customer_name", payload.CustomerName);
+        command.Parameters.AddWithValue("p_customer_email", payload.CustomerEmail);
+        command.Parameters.AddWithValue("p_shipping_address", payload.ShippingAddress);
+        command.Parameters.AddWithValue("p_payment_method_id", payload.PaymentMethodId);
+        command.Parameters.AddWithValue("p_delivery_option_id", payload.DeliveryOptionId);
+        command.Parameters.AddWithValue("p_subtotal", payload.Subtotal);
+        command.Parameters.AddWithValue("p_delivery_fee", payload.DeliveryFee);
+        command.Parameters.AddWithValue("p_processing_fee", payload.ProcessingFee);
+        command.Parameters.AddWithValue("p_total", payload.Total);
+
+        command.Parameters.AddWithValue("p_items", payload.BuildItemsArrayLiteral());
+
+        string? orderNumber = null;
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (await reader.ReadAsync(cancellationToken))
+        {
+            orderNumber = reader.IsDBNull(0) ? null : reader.GetString(0);
+        }
+
         return (string.IsNullOrWhiteSpace(orderNumber) is false, orderNumber);
+    }
+
+    public async Task<User?> GetUserByUsernameAsync(string username, CancellationToken cancellationToken)
+    {
+        var parameters = new DynamicParameters();
+        parameters.Add("p_username", username);
+
+        using var connection = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken);
+        var command = new CommandDefinition(
+            $"select * from {StoredProcedures.UserGetByUsername}(@p_username)",
+            parameters,
+            commandType: CommandType.Text,
+            cancellationToken: cancellationToken,
+            commandTimeout: _commandTimeout);
+        
+        return await connection.QuerySingleOrDefaultAsync<User>(command);
     }
 
     private async Task<IEnumerable<Product>> QueryProductsAsync(string functionName, CancellationToken cancellationToken)
@@ -202,19 +285,16 @@ public sealed class CheckoutPayload
     public required decimal Total { get; init; }
     public required IReadOnlyCollection<(int ProductId, int Quantity, decimal UnitPrice)> Items { get; init; }
 
-    public DataTable BuildItemsTableValuedParameter()
+    public string BuildItemsArrayLiteral()
     {
-        var table = new DataTable();
-        table.Columns.Add("product_id", typeof(int));
-        table.Columns.Add("quantity", typeof(int));
-        table.Columns.Add("unit_price", typeof(decimal));
-
-        foreach (var item in Items)
+        if (Items.Count == 0)
         {
-            table.Rows.Add(item.ProductId, item.Quantity, item.UnitPrice);
+            return "{}";
         }
 
-        return table;
+        var values = Items.Select(item =>
+            $"\"({item.ProductId},{item.Quantity},{item.UnitPrice.ToString(System.Globalization.CultureInfo.InvariantCulture)})\"");
+
+        return $"{{{string.Join(",", values)}}}";
     }
 }
-

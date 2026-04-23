@@ -1,0 +1,23 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "PerfumeStore.Web Debug (http profile)",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "build PerfumeStore.Web",
+      "program": "${workspaceFolder}/PerfumeStore.Web/bin/Debug/net8.0/PerfumeStore.Web.dll",
+      "args": [],
+      "cwd": "${workspaceFolder}/PerfumeStore.Web",
+      "stopAtEntry": false,
+      "env": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "ASPNETCORE_URLS": "http://localhost:5019"
+      },
+      "serverReadyAction": {
+        "action": "openExternally",
+        "pattern": "\\bNow listening on:\\s+(https?://\\S+)"
+      }
+    }
+  ]
+}

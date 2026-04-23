@@ -4,57 +4,97 @@
     var categories = ViewData["Categories"] as IReadOnlyCollection<string> ?? Array.Empty<string>();
     var currentCategory = ViewData["CurrentCategory"]?.ToString() ?? "all";
     var query = ViewData["Query"]?.ToString() ?? string.Empty;
+    var returnUrl = $"{Context.Request.Path}{Context.Request.QueryString}";
 }
 
-<section class="container my-5">
-    <div class="d-flex flex-column flex-lg-row align-items-lg-center justify-content-between gap-3 mb-4">
-        <div>
-            <p class="eyebrow text-uppercase">Live catalog</p>
-            <h1>Explore every scent family</h1>
-            <p class="text-muted">Filters powered by ASP.NET 8 + Postgres + Dapper.</p>
+<section class="container py-5">
+    <div class="mb-5">
+        <div class="section-heading mb-4">
+            <p class="eyebrow">Live Catalog</p>
+            <h1>Explore Every Scent Family</h1>
+            <p class="text-muted">Filters powered by ASP.NET 8, PostgreSQL + Dapper</p>
         </div>
-        <form class="catalog-search d-flex gap-2" method="get">
+
+        <form class="catalog-search" method="get">
             <input type="hidden" name="category" value="@currentCategory" />
-            <input class="form-control" type="search" name="q" placeholder="Search by note, mood, perfumer..." value="@query" />
-            <button class="btn btn-dark" type="submit">Search</button>
+            <input class="form-control form-control-lg" type="search" name="q" placeholder="Search by note, mood, perfumer..." value="@query" />
+            <button class="btn btn-dark btn-lg" type="submit">
+                <i class="bi bi-search me-2"></i>Search
+            </button>
         </form>
     </div>
 
-    <div class="catalog-filters mb-4 d-flex flex-wrap gap-2">
-        <a class="btn btn-sm @(currentCategory == "all" ? "btn-dark" : "btn-outline-secondary")" href="?category=all">All</a>
-        @foreach (var category in categories)
-        {
-            var css = category.Equals(currentCategory, StringComparison.OrdinalIgnoreCase) ? "btn-dark" : "btn-outline-secondary";
-            <a class="btn btn-sm @css" href="?category=@category">@category</a>
-        }
+    <div class="d-flex align-items-center justify-content-between flex-wrap gap-3 mb-5">
+        <div>
+            <p class="text-muted mb-0">Filter by category</p>
+        </div>
+        <div class="catalog-filters">
+            <a class="btn @(currentCategory == "all" ? "btn-dark" : "btn-outline-secondary")" href="?category=all">
+                <i class="bi bi-funnel me-2"></i>All Fragrances
+            </a>
+            @foreach (var category in categories)
+            {
+                var css = category.Equals(currentCategory, StringComparison.OrdinalIgnoreCase) ? "btn-dark" : "btn-outline-secondary";
+                <a class="btn @css" href="?category=@category">@category</a>
+            }
+        </div>
     </div>
 
-    <div class="row g-4">
-        @foreach (var product in Model)
-        {
-            <div class="col-md-4">
-                <article class="product-card">
-                    <div class="product-image" style="background-image:url('@product.ImageUrl')"></div>
-                    <div class="product-body">
-                        <p class="text-uppercase text-muted small">@product.Category</p>
-                        <h3>@product.Name</h3>
-                        <p>@product.Description</p>
-                        <div class="pricing">
-                            @if (product.DiscountPrice.HasValue)
-                            {
-                                <span class="price-discount">@product.DiscountPrice.Value.ToString("C")</span>
-                                <span class="price-original">@product.Price.ToString("C")</span>
-                            }
-                            else
-                            {
-                                <span class="price">@product.Price.ToString("C")</span>
-                            }
+    @if (!Model.Any())
+    {
+        <div class="alert alert-info text-center py-5">
+            <i class="bi bi-info-circle me-2"></i>
+            <strong>No products found</strong>
+            <p class="mb-0 mt-2">Try adjusting your search or filters</p>
+        </div>
+    }
+    else
+    {
+        <div class="row g-4">
+            @foreach (var product in Model)
+            {
+                <div class="col-lg-4 col-md-6">
+                    <article class="product-card">
+                        <div class="product-image" style="background-image:url('@product.ImageUrl')"></div>
+                        <div class="product-body">
+                            <p class="text-muted">@product.Category</p>
+                            <h3>@product.Name</h3>
+                            <p class="small text-muted">@product.Description</p>
+                            <div class="pricing my-3">
+                                @if (product.DiscountPrice.HasValue)
+                                {
+                                    <span class="price-discount">@product.DiscountPrice.Value.ToString("C")</span>
+                                    <span class="price-original">@product.Price.ToString("C")</span>
+                                }
+                                else
+                                {
+                                    <span class="price">@product.Price.ToString("C")</span>
+                                }
+                            </div>
+                            <div class="d-flex gap-2">
+                                <form asp-controller="Checkout" asp-action="AddToCart" method="post" class="flex-grow-1">
+                                    <input type="hidden" name="productId" value="@product.Id" />
+                                    <input type="hidden" name="quantity" value="1" />
+                                    <input type="hidden" name="returnUrl" value="@returnUrl" />
+                                    <button class="btn btn-dark w-100" type="submit">
+                                        <i class="bi bi-bag-check me-2"></i>Add to Cart
+                                    </button>
+                                </form>
+                                <button class="btn btn-outline-secondary" data-product-id="@product.Id" data-role="quick-view" title="Quick View">
+                                    <i class="bi bi-eye"></i>
+                                </button>
+                            </div>
                         </div>
-                        <a class="btn btn-outline-dark w-100 mt-3" href="/checkout">Add to cart</a>
-                    </div>
-                </article>
-            </div>
-        }
-    </div>
+                    </article>
+                </div>
+            }
+        </div>
+    }
 </section>
 
+@section Scripts {
+    <script>
+        window.perfumierReturnUrl = "@returnUrl";
+    </script>
+    <script src="/js/landing.js"></script>
+}

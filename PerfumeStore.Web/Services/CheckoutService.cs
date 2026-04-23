@@ -13,40 +13,69 @@ public class CheckoutService
         _repository = repository;
     }
 
-    public async Task<CheckoutPageViewModel> BuildCheckoutAsync(CancellationToken cancellationToken)
+    public async Task<CheckoutPageViewModel> BuildCheckoutAsync(
+        IReadOnlyCollection<CheckoutLine>? cartLines,
+        int? selectedPaymentMethodId,
+        int? selectedDeliveryOptionId,
+        CancellationToken cancellationToken)
     {
-        var productsTask = _repository.GetFeaturedProductsAsync(cancellationToken);
+        var productsTask = _repository.GetAllProductsAsync(cancellationToken);
         var paymentsTask = _repository.GetPaymentMethodsAsync(cancellationToken);
         var deliveryTask = _repository.GetDeliveryOptionsAsync(cancellationToken);
 
         await Task.WhenAll(productsTask, paymentsTask, deliveryTask);
 
-        var randomCart = productsTask.Result.Take(3).Select(p => new ProductCardViewModel
-        {
-            Id = p.Id,
-            Name = p.Name,
-            Description = p.Description,
-            Category = p.CategoryName,
-            ImageUrl = p.ImageUrl,
-            Price = p.Price,
-            DiscountPrice = p.DiscountPrice,
-            IsNewArrival = p.IsFeatured
-        }).ToList();
+        var products = productsTask.Result;
+        var cartItems = (cartLines ?? Array.Empty<CheckoutLine>())
+            .Where(line => line.Quantity > 0)
+            .Select(line => (line, product: products.FirstOrDefault(product => product.Id == line.ProductId)))
+            .Where(tuple => tuple.product is not null)
+            .Select(tuple =>
+            {
+                var product = tuple.product!;
+                var unitPrice = product.DiscountPrice ?? product.Price;
 
-        var subtotal = randomCart.Sum(p => p.DiscountPrice ?? p.Price);
+                return new CartItemViewModel
+                {
+                    ProductId = product.Id,
+                    Name = product.Name,
+                    Category = product.CategoryName,
+                    ImageUrl = product.ImageUrl,
+                    UnitPrice = unitPrice,
+                    OriginalPrice = product.DiscountPrice.HasValue ? product.Price : null,
+                    Quantity = Math.Min(tuple.line.Quantity, Math.Max(product.StockQuantity, 1)),
+                    StockQuantity = product.StockQuantity
+                };
+            })
+            .ToList();
+
+        var paymentMethods = paymentsTask.Result.Where(p => p.IsActive).ToList();
+        var deliveryOptions = deliveryTask.Result.Where(d => d.IsActive).ToList();
+        var paymentMethod = paymentMethods.FirstOrDefault(p => p.Id == selectedPaymentMethodId) ?? paymentMethods.FirstOrDefault();
+        var deliveryOption = deliveryOptions.FirstOrDefault(d => d.Id == selectedDeliveryOptionId) ?? deliveryOptions.FirstOrDefault();
+
+        var subtotal = cartItems.Sum(item => item.LineTotal);
+        var deliveryFee = deliveryOption?.Fee ?? 0m;
+        var processingFee = paymentMethod?.ProcessingFee ?? 0m;
+
         return new CheckoutPageViewModel
         {
-            CartProducts = randomCart,
-            PaymentMethods = paymentsTask.Result.Where(p => p.IsActive).ToList(),
-            DeliveryOptions = deliveryTask.Result.Where(d => d.IsActive).ToList(),
+            CartItems = cartItems,
+            CartItemCount = cartItems.Sum(item => item.Quantity),
+            PaymentMethods = paymentMethods,
+            DeliveryOptions = deliveryOptions,
             Subtotal = subtotal,
-            EstimatedTotal = subtotal + deliveryTask.Result.FirstOrDefault(d => d.IsActive)?.Fee ?? 0,
+            DeliveryFee = deliveryFee,
+            ProcessingFee = processingFee,
+            EstimatedTotal = subtotal + deliveryFee + processingFee,
             Request = new CheckoutRequest
             {
-                Items = randomCart.Select(p => new CheckoutLine
+                PaymentMethodId = paymentMethod?.Id ?? 0,
+                DeliveryOptionId = deliveryOption?.Id ?? 0,
+                Items = cartItems.Select(item => new CheckoutLine
                 {
-                    ProductId = p.Id,
-                    Quantity = 1
+                    ProductId = item.ProductId,
+                    Quantity = item.Quantity
                 }).ToList()
             }
         };
@@ -113,4 +142,3 @@ public class CheckoutService
         };
     }
 }
-

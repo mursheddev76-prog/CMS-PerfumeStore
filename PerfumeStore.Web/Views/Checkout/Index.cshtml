@@ -4,77 +4,144 @@
     var resultMessage = TempData["CheckoutResult"]?.ToString();
     var resultSuccess = TempData["CheckoutIsSuccess"]?.ToString();
     var orderNumber = TempData["OrderNumber"]?.ToString();
+    var cartMessage = TempData["CartMessage"]?.ToString();
 }
 
-<section class="container my-5 checkout-page">
-    <div class="row g-5">
+<section class="container py-5">
+    <div class="mb-5">
+        <h1 class="mb-2">Secure Checkout</h1>
+        <p class="text-muted">Payment and delivery options managed by the admin panel</p>
+    </div>
+
+    @if (!string.IsNullOrEmpty(resultMessage))
+    {
+        var alertClass = resultSuccess == "True" ? "alert-success" : "alert-danger";
+        <div class="alert @alertClass mb-4">
+            <div class="d-flex align-items-start gap-3">
+                @if (resultSuccess == "True")
+                {
+                    <i class="bi bi-check-circle flex-shrink-0" style="font-size: 1.5rem;"></i>
+                    <div>
+                        <strong>Order Placed Successfully!</strong>
+                        @if (!string.IsNullOrEmpty(orderNumber))
+                        {
+                            <p class="mb-0 mt-2">Order Number: <code>@orderNumber</code></p>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <i class="bi bi-exclamation-circle flex-shrink-0" style="font-size: 1.5rem;"></i>
+                    <div>
+                        <strong>Error Processing Order</strong>
+                        <p class="mb-0 mt-2">@resultMessage</p>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(cartMessage))
+    {
+        <div class="alert alert-info mb-4">
+            <i class="bi bi-bag-check me-2"></i>@cartMessage
+        </div>
+    }
+
+    <div class="row g-4">
         <div class="col-lg-7">
-            <h1>Checkout</h1>
-            <p class="text-muted">Payment and delivery options come straight from the admin config.</p>
-
-            @if (!string.IsNullOrEmpty(resultMessage))
-            {
-                var alertClass = resultSuccess == "True" ? "alert-success" : "alert-danger";
-                <div class="alert @alertClass">
-                    <strong>@resultMessage</strong>
-                    @if (!string.IsNullOrEmpty(orderNumber))
-                    {
-                        <span> Order: <code>@orderNumber</code></span>
-                    }
-                </div>
-            }
-
-            <form asp-action="PlaceOrder" method="post">
+            <form asp-action="PlaceOrder" method="post" class="checkout-form">
                 @Html.AntiForgeryToken()
-                <div asp-validation-summary="ModelOnly" class="text-danger"></div>
-                <h4>Contact</h4>
-                <div class="row g-3 mb-4">
-                    <div class="col-md-6">
-                        <label asp-for="Request.CustomerName" class="form-label"></label>
-                        <input asp-for="Request.CustomerName" class="form-control" />
-                        <span asp-validation-for="Request.CustomerName" class="text-danger"></span>
+
+                <div asp-validation-summary="ModelOnly" class="alert alert-danger"></div>
+
+                <!-- Contact Section -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="mb-0">
+                            <i class="bi bi-person-circle me-2"></i>Contact Information
+                        </h5>
                     </div>
-                    <div class="col-md-6">
-                        <label asp-for="Request.CustomerEmail" class="form-label"></label>
-                        <input asp-for="Request.CustomerEmail" class="form-control" />
-                        <span asp-validation-for="Request.CustomerEmail" class="text-danger"></span>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label asp-for="Request.CustomerName" class="form-label">Full Name</label>
+                                <input asp-for="Request.CustomerName" class="form-control form-control-lg" />
+                                <span asp-validation-for="Request.CustomerName" class="text-danger small"></span>
+                            </div>
+                            <div class="col-md-6">
+                                <label asp-for="Request.CustomerEmail" class="form-label">Email Address</label>
+                                <input asp-for="Request.CustomerEmail" type="email" class="form-control form-control-lg" />
+                                <span asp-validation-for="Request.CustomerEmail" class="text-danger small"></span>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
-                <h4>Delivery</h4>
-                <div class="mb-4">
-                    <label asp-for="Request.ShippingAddress" class="form-label"></label>
-                    <textarea asp-for="Request.ShippingAddress" rows="3" class="form-control"></textarea>
-                    <span asp-validation-for="Request.ShippingAddress" class="text-danger"></span>
-                </div>
-                <div class="mb-4">
-                    <label class="form-label">Choose delivery option</label>
-                    @foreach (var option in Model.DeliveryOptions)
-                    {
-                        <div class="form-check">
-                            <input class="form-check-input" type="radio" asp-for="Request.DeliveryOptionId" value="@option.Id" />
-                            <label class="form-check-label">
-                                <strong>@option.Name</strong> — @option.Description
-                                <small class="text-muted">(ETA: @option.EstimatedDays day(s), @option.Fee.ToString("C"))</small>
-                            </label>
+                <!-- Delivery Section -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="mb-0">
+                            <i class="bi bi-truck me-2"></i>Delivery Information
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <label asp-for="Request.ShippingAddress" class="form-label">Shipping Address</label>
+                        <textarea asp-for="Request.ShippingAddress" rows="3" class="form-control form-control-lg" placeholder="Street address, City, State, ZIP"></textarea>
+                        <span asp-validation-for="Request.ShippingAddress" class="text-danger small"></span>
+
+                        <label class="form-label mt-4 mb-3">
+                            <i class="bi bi-box me-2"></i>Choose Delivery Option
+                        </label>
+                        <div>
+                            @foreach (var option in Model.DeliveryOptions)
+                            {
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" asp-for="Request.DeliveryOptionId" value="@option.Id" id="delivery_@option.Id" />
+                                    <label class="form-check-label" for="delivery_@option.Id">
+                                        <strong>@option.Name</strong>
+                                        <span class="text-muted ms-2">— @option.Description</span>
+                                        <br>
+                                        <small class="text-muted">
+                                            <i class="bi bi-clock me-1"></i>@option.EstimatedDays day(s)
+                                            <span class="mx-2">•</span>
+                                            <i class="bi bi-tag me-1"></i>@option.Fee.ToString("C")
+                                        </small>
+                                    </label>
+                                </div>
+                            }
                         </div>
-                    }
-                    <span asp-validation-for="Request.DeliveryOptionId" class="text-danger"></span>
+                        <span asp-validation-for="Request.DeliveryOptionId" class="text-danger small"></span>
+                    </div>
                 </div>
 
-                <h4>Payment</h4>
-                <div class="mb-4">
-                    @foreach (var method in Model.PaymentMethods)
-                    {
-                        <div class="form-check">
-                            <input class="form-check-input" type="radio" asp-for="Request.PaymentMethodId" value="@method.Id" />
-                            <label class="form-check-label">
-                                <strong>@method.Name</strong> — @method.Provider
-                                <small class="text-muted">(Fee: @method.ProcessingFee.ToString("C"))</small>
-                            </label>
+                <!-- Payment Section -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="mb-0">
+                            <i class="bi bi-credit-card me-2"></i>Payment Method
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <label class="form-label mb-3">Choose payment method</label>
+                        <div>
+                            @foreach (var method in Model.PaymentMethods)
+                            {
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" asp-for="Request.PaymentMethodId" value="@method.Id" id="payment_@method.Id" />
+                                    <label class="form-check-label" for="payment_@method.Id">
+                                        <strong>@method.Name</strong>
+                                        <span class="text-muted ms-2">— @method.Provider</span>
+                                        <br>
+                                        <small class="text-muted">
+                                            <i class="bi bi-percent me-1"></i>Processing Fee: @method.ProcessingFee.ToString("C")
+                                        </small>
+                                    </label>
+                                </div>
+                            }
                         </div>
-                    }
-                    <span asp-validation-for="Request.PaymentMethodId" class="text-danger"></span>
+                        <span asp-validation-for="Request.PaymentMethodId" class="text-danger small"></span>
+                    </div>
                 </div>
 
                 @for (var i = 0; i < Model.Request.Items.Count; i++)
@@ -83,38 +150,86 @@
                     <input type="hidden" asp-for="Request.Items[i].Quantity" />
                 }
 
-                <button class="btn btn-dark btn-lg" type="submit">Place order</button>
+                <button class="btn btn-dark btn-lg w-100" type="submit" disabled="@(!Model.HasCart)">
+                    <i class="bi bi-lock-fill me-2"></i>Complete Purchase
+                </button>
             </form>
         </div>
 
+        <!-- Order Summary Sidebar -->
         <div class="col-lg-5">
-            <div class="card shadow-sm">
-                <div class="card-header bg-white">
-                    <h4>Your ritual</h4>
-                    <small>Cart preview generated from featured products.</small>
+            <div class="card sticky-top" style="top: 100px;">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="bi bi-bag-check me-2"></i>Order Summary
+                    </h5>
+                    <small class="text-muted">Cart preview</small>
                 </div>
                 <div class="card-body">
-                    @foreach (var product in Model.CartProducts)
+                    @if (!Model.HasCart)
                     {
-                        <div class="d-flex justify-content-between align-items-center mb-3">
-                            <div>
-                                <strong>@product.Name</strong>
-                                <p class="text-muted mb-0">@product.Category</p>
-                            </div>
-                            <span>@(product.DiscountPrice ?? product.Price).ToString("C")</span>
+                        <div class="text-center py-4">
+                            <p class="text-muted mb-3">Your cart is empty.</p>
+                            <a class="btn btn-outline-dark" href="/catalog">Browse Catalog</a>
                         </div>
                     }
+                    else
+                    {
+                        @foreach (var item in Model.CartItems)
+                        {
+                            <div class="d-flex gap-3 align-items-start mb-3 pb-3 border-bottom">
+                                <img src="@item.ImageUrl" alt="@item.Name" class="rounded" style="width:72px;height:72px;object-fit:cover;" />
+                                <div class="flex-grow-1">
+                                    <strong class="d-block">@item.Name</strong>
+                                    <small class="text-muted d-block mb-2">@item.Category</small>
+                                    <form asp-action="UpdateCart" method="post" class="d-flex gap-2 align-items-center">
+                                        <input type="hidden" name="productId" value="@item.ProductId" />
+                                        <input type="number" name="quantity" value="@item.Quantity" min="0" max="99" class="form-control form-control-sm" style="max-width: 96px;" />
+                                        <button class="btn btn-sm btn-outline-dark" type="submit">Update</button>
+                                    </form>
+                                </div>
+                                <div class="text-end">
+                                    <strong class="d-block">@item.LineTotal.ToString("C")</strong>
+                                    @if (item.OriginalPrice.HasValue)
+                                    {
+                                        <small class="text-muted text-decoration-line-through d-block">@item.OriginalPrice.Value.ToString("C")</small>
+                                    }
+                                    <small class="text-muted d-block">@item.UnitPrice.ToString("C") each</small>
+                                    <form asp-action="RemoveFromCart" method="post" class="mt-2">
+                                        <input type="hidden" name="productId" value="@item.ProductId" />
+                                        <button class="btn btn-sm btn-link text-danger p-0" type="submit">Remove</button>
+                                    </form>
+                                </div>
+                            </div>
+                        }
+                    }
                 </div>
-                <div class="card-footer bg-white">
-                    <div class="d-flex justify-content-between">
+                <div class="card-footer bg-light">
+                    <div class="d-flex justify-content-between mb-3 pb-3 border-bottom">
                         <span>Subtotal</span>
                         <strong>@Model.Subtotal.ToString("C")</strong>
                     </div>
-                    <div class="d-flex justify-content-between">
-                        <span>Est. total*</span>
-                        <strong>@Model.EstimatedTotal.ToString("C")</strong>
+                    <div class="d-flex justify-content-between mb-3">
+                        <span>Estimated Delivery</span>
+                        <strong class="text-muted">@Model.DeliveryFee.ToString("C")</strong>
                     </div>
-                    <p class="text-muted mt-2 mb-0 small">*Final total depends on admin-managed delivery & payment fees.</p>
+                    <div class="d-flex justify-content-between mb-3">
+                        <span>Payment Processing</span>
+                        <strong class="text-muted">@Model.ProcessingFee.ToString("C")</strong>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center pt-3 border-top">
+                        <span class="fw-bold">Total (Estimated)</span>
+                        <strong class="h5 mb-0">@Model.EstimatedTotal.ToString("C")</strong>
+                    </div>
+                    <small class="text-muted d-block mt-3 mb-0">
+                        <i class="bi bi-info-circle me-1"></i>Totals reflect the currently selected delivery and payment options.
+                    </small>
+                    @if (Model.HasCart)
+                    {
+                        <form asp-action="ClearCart" method="post" class="mt-3">
+                            <button class="btn btn-outline-secondary btn-sm w-100" type="submit">Clear Cart</button>
+                        </form>
+                    }
                 </div>
             </div>
         </div>
@@ -124,4 +239,3 @@
 @section Scripts {
     <partial name="_ValidationScriptsPartial" />
 }
-

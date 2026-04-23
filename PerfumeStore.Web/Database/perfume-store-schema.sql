@@ -502,3 +502,40 @@ returns table(
 language sql
 as $$ select title, subtitle, background_image, primary_cta_text, primary_cta_link, secondary_cta_text, secondary_cta_link from hero_content limit 1; $$;
 
+
+-- 5. User management ----------------------------------------------------------
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+create table if not exists app_users (
+    id              serial primary key,
+    username        varchar(80) not null unique,
+    password_hash   text not null,
+    role            varchar(20) not null default 'customer',
+    is_active       boolean not null default true,
+    created_at      timestamptz not null default now()
+);
+
+insert into app_users (username, password_hash, role)
+values ('admin', crypt('password', gen_salt('bf')), 'admin')
+on conflict (username) do nothing;
+
+create or replace function sp_user_get_by_username(
+    p_username varchar
+)
+returns table (
+    Id int,
+    Username varchar,
+    PasswordHash text,
+    Role varchar
+)
+language sql
+as $$
+    select
+        id,
+        username,
+        password_hash,
+        role
+    from app_users
+    where username = p_username and is_active;
+$$;

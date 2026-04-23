@@ -49,10 +49,18 @@
                     <!-- Right Buttons -->
                     <div class="d-flex gap-2">
 
-                        <!-- Login Button (new) -->
-                        <button class="btn btn-outline-dark" data-bs-toggle="modal" data-bs-target="#loginModal">
-                            Login
-                        </button>
+                        @if (User.Identity?.IsAuthenticated == true)
+                        {
+                            <span class="navbar-text">Hello, @User.Identity?.Name!</span>
+                            <a class="btn btn-outline-dark" asp-controller="Account" asp-action="Logout">Logout</a>
+                        }
+                        else
+                        {
+                            <!-- Login Button (new) -->
+                            <button class="btn btn-outline-dark" data-bs-toggle="modal" data-bs-target="#loginModal">
+                                Login
+                            </button>
+                        }
 
                         <a class="btn btn-outline-secondary" href="/catalog">Shop</a>
                         <a class="btn btn-dark" href="/admin">Launch Console</a>
@@ -101,8 +109,12 @@
                 <div class="modal-body text-center">
                     <p class="text-muted mb-3">Select how you want to login</p>
 
-                    <a href="/account/login" class="btn btn-dark w-100 py-2 mb-2">Customer Login</a>
-                    <a href="/admin/login" class="btn btn-outline-dark w-100 py-2">Admin Login</a>
+                    <a href="/Account/Login?type=customer" class="btn btn-dark w-100 py-2 mb-2">
+                        <i class="bi bi-person me-2"></i>Customer Login
+                    </a>
+                    <a href="/Account/Login?type=admin" class="btn btn-outline-dark w-100 py-2">
+                        <i class="bi bi-shield-lock me-2"></i>Admin Login
+                    </a>
                 </div>
             </div>
         </div>

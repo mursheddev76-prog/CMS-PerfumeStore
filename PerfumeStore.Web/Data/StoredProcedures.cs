@@ -21,5 +21,6 @@ public static class StoredProcedures
     public const string AdminDashboardStats = "sp_admin_dashboard_get_stats";
 
     public const string OrderCreate = "sp_order_create";
+    public const string UserGetByUsername = "sp_user_get_by_username";
 }
 

@@ -15,10 +15,14 @@ public class ProductsApiController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<IActionResult> Get([FromQuery] string? category, [FromQuery] string? q, CancellationToken cancellationToken)
+    public async Task<IActionResult> Get([FromQuery] int? id, [FromQuery] string? category, [FromQuery] string? q, CancellationToken cancellationToken)
     {
         var (products, _) = await _catalogService.SearchAsync(category, q, cancellationToken);
+        if (id.HasValue)
+        {
+            return Ok(products.Where(product => product.Id == id.Value));
+        }
+
         return Ok(products);
     }
 }
-
