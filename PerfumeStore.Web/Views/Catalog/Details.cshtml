@@ -1,0 +1,103 @@
+@model PerfumeStore.Web.Models.ViewModels.ProductDetailsViewModel
+
+@{
+    ViewData["Title"] = Model.Product.Name;
+    var returnUrl = $"{Context.Request.Path}{Context.Request.QueryString}";
+}
+
+<section class="container py-5">
+    <div class="row g-5 align-items-start">
+        <div class="col-lg-6">
+            <div class="product-detail-image">
+                <img src="@Model.Product.ImageUrl" alt="@Model.Product.Name" />
+            </div>
+        </div>
+
+        <div class="col-lg-6">
+            <p class="eyebrow mb-3">@Model.Product.Category</p>
+            <h1 class="mb-3">@Model.Product.Name</h1>
+            <p class="lead text-muted mb-4">@Model.Product.Description</p>
+
+            <div class="pricing mb-4">
+                @if (Model.Product.DiscountPrice.HasValue)
+                {
+                    <span class="price-discount">@Model.Product.DiscountPrice.Value.ToString("C")</span>
+                    <span class="price-original">@Model.Product.Price.ToString("C")</span>
+                }
+                else
+                {
+                    <span class="price">@Model.Product.Price.ToString("C")</span>
+                }
+            </div>
+
+            <p class="mb-4">
+                @if (Model.Product.IsOutOfStock)
+                {
+                    <span class="badge text-bg-secondary">Out of stock</span>
+                }
+                else
+                {
+                    <span class="badge text-bg-success">@Model.Product.StockQuantity in stock</span>
+                }
+            </p>
+
+            <div class="d-flex flex-wrap gap-3">
+                <form asp-controller="Checkout" asp-action="AddToCart" method="post">
+                    @Html.AntiForgeryToken()
+                    <input type="hidden" name="productId" value="@Model.Product.Id" />
+                    <input type="hidden" name="quantity" value="1" />
+                    <input type="hidden" name="returnUrl" value="@returnUrl" />
+                    <button class="btn btn-dark btn-lg" type="submit" disabled="@Model.Product.IsOutOfStock">Add to cart</button>
+                </form>
+
+                @if (User.IsInRole("customer"))
+                {
+                    <form asp-controller="Customer" asp-action="@(Model.Product.IsWishlisted ? "RemoveFromWishlist" : "AddToWishlist")" method="post">
+                        @Html.AntiForgeryToken()
+                        <input type="hidden" name="productId" value="@Model.Product.Id" />
+                        <input type="hidden" name="returnUrl" value="@returnUrl" />
+                        <button class="btn btn-outline-dark btn-lg" type="submit">
+                            @(Model.Product.IsWishlisted ? "Remove from wishlist" : "Save to wishlist")
+                        </button>
+                    </form>
+                }
+                else
+                {
+                    <a class="btn btn-outline-dark btn-lg" href="/Account/Login?type=customer">Sign in to save</a>
+                }
+            </div>
+        </div>
+    </div>
+</section>
+
+@if (Model.RelatedProducts.Any())
+{
+    <section class="container pb-5">
+        <div class="section-heading">
+            <h2>Related scents</h2>
+            <p class="text-muted">More from the same fragrance family.</p>
+        </div>
+
+        <div class="row g-4">
+            @foreach (var product in Model.RelatedProducts)
+            {
+                <div class="col-lg-3 col-md-6">
+                    <article class="product-card">
+                        <a class="product-image-link" href="/catalog/@product.Id">
+                            <div class="product-image" style="background-image:url('@product.ImageUrl')"></div>
+                        </a>
+                        <div class="product-body">
+                            <p class="text-muted">@product.Category</p>
+                            <h3>@product.Name</h3>
+                            <p class="small text-muted">@product.Description</p>
+                            <div class="pricing my-3">
+                                <span class="price">@((product.DiscountPrice ?? product.Price).ToString("C"))</span>
+                            </div>
+                            <a class="btn btn-outline-dark w-100" href="/catalog/@product.Id">View details</a>
+                        </div>
+                    </article>
+                </div>
+            }
+        </div>
+    </section>
+}

@@ -2,42 +2,51 @@
 @{
     ViewData["Title"] = "Admin Dashboard";
     var message = TempData["AdminMessage"]?.ToString();
+    var isMessageError = TempData["AdminMessageIsError"] as bool? == true;
     var isEditingCategory = Model.CategoryForm.Id > 0;
     var isEditingProduct = Model.ProductForm.Id > 0;
     var isEditingPayment = Model.PaymentForm.Id > 0;
     var isEditingDelivery = Model.DeliveryForm.Id > 0;
+    var isEditingUser = Model.UserForm.Id > 0;
+    var statuses = new[] { "Processing", "Packed", "Shipped", "Delivered", "Cancelled" };
+    var paymentStatuses = new[] { "Pending Review", "Receipt Submitted", "Pending Confirmation", "Paid", "Rejected" };
+    var roles = new[]
+    {
+        ("admin", "Admin"),
+        ("operations_manager", "Operations Manager"),
+        ("catalog_manager", "Catalog Manager"),
+        ("finance_manager", "Finance Manager"),
+        ("customer", "Customer")
+    };
 }
 
 <section class="container py-5 admin-dashboard">
-    <!-- Header Section -->
     <div class="d-flex flex-column flex-lg-row align-items-lg-start justify-content-between gap-4 mb-5">
         <div>
             <p class="eyebrow mb-2">Operations</p>
             <h1 class="mb-3">Command Center</h1>
-            <p class="text-muted">Manage your entire store operations: hero banners, products, payments, and deliveries—all persisted via PostgreSQL stored procedures.</p>
+            <p class="text-muted">Manage catalog, staff roles, payment rails, manual receipt reviews, and order fulfillment from a single perfume CMS console.</p>
         </div>
         <a class="btn btn-outline-dark" href="/">
             <i class="bi bi-eye me-2"></i>View Store
         </a>
     </div>
 
-    <!-- Success Message -->
     @if (!string.IsNullOrEmpty(message))
     {
-        <div class="alert alert-success alert-dismissible fade show mb-4" role="alert">
-            <i class="bi bi-check-circle me-2"></i>
-            <strong>Success!</strong> @message
+        <div class="alert @(isMessageError ? "alert-danger" : "alert-success") alert-dismissible fade show mb-4" role="alert">
+            <i class="bi @(isMessageError ? "bi-exclamation-triangle" : "bi-check-circle") me-2"></i>
+            <strong>@(isMessageError ? "Attention!" : "Success!")</strong> @message
             <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
         </div>
     }
 
-    <!-- KPI Cards -->
     <div class="row g-3 mb-5">
         <div class="col-sm-6 col-lg-2.4" style="flex: 0 0 calc(20% - 12px);">
             <div class="stat-card">
-                <p>Active Products</p>
+                <p>Featured Products</p>
                 <h3>@Model.Stats.ActiveProducts</h3>
-                <small class="text-muted d-block mt-2">in catalog</small>
+                <small class="text-muted d-block mt-2">surfaced on storefront</small>
             </div>
         </div>
         <div class="col-sm-6 col-lg-2.4" style="flex: 0 0 calc(20% - 12px);">
@@ -70,77 +79,242 @@
         </div>
     </div>
 
-    <!-- Hero Banner Section -->
+    <div class="row g-4 mb-5">
+        <div class="col-xl-8">
+            <div class="card shadow-sm h-100">
+                <div class="card-header">
+                    <h4 class="mb-0"><i class="bi bi-receipt-cutoff me-2"></i>Order Operations</h4>
+                    <small class="text-muted">Advanced filters plus manual payment review from the same queue.</small>
+                </div>
+                <div class="card-body">
+                    <form method="get" class="row g-3 mb-4">
+                        <div class="col-lg-4">
+                            <label class="form-label">Search</label>
+                            <input type="text" name="orderQuery" value="@Model.OrderFilters.Query" class="form-control" placeholder="Order no, customer, email" />
+                        </div>
+                        <div class="col-md-4 col-lg-2">
+                            <label class="form-label">Order Status</label>
+                            <select name="status" class="form-select">
+                                <option value="">All</option>
+                                @foreach (var status in statuses)
+                                {
+                                    <option value="@status" selected="@(status == Model.OrderFilters.Status)">@status</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-4 col-lg-2">
+                            <label class="form-label">Payment Status</label>
+                            <select name="paymentStatus" class="form-select">
+                                <option value="">All</option>
+                                @foreach (var status in paymentStatuses)
+                                {
+                                    <option value="@status" selected="@(status == Model.OrderFilters.PaymentStatus)">@status</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-4 col-lg-2">
+                            <label class="form-label">Payment Method</label>
+                            <select name="orderPaymentMethodId" class="form-select">
+                                <option value="">All</option>
+                                @foreach (var method in Model.PaymentMethods)
+                                {
+                                    <option value="@method.Id" selected="@(method.Id == Model.OrderFilters.PaymentMethodId)">@method.Name</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-6 col-lg-2">
+                            <label class="form-label">From</label>
+                            <input type="date" name="dateFrom" value="@Model.OrderFilters.DateFrom?.ToString("yyyy-MM-dd")" class="form-control" />
+                        </div>
+                        <div class="col-md-6 col-lg-2">
+                            <label class="form-label">To</label>
+                            <input type="date" name="dateTo" value="@Model.OrderFilters.DateTo?.ToString("yyyy-MM-dd")" class="form-control" />
+                        </div>
+                        <div class="col-12 d-flex gap-2">
+                            <button class="btn btn-dark" type="submit">Apply Filters</button>
+                            <a class="btn btn-outline-secondary" href="/admin">Reset</a>
+                        </div>
+                    </form>
+
+                    @if (!Model.RecentOrders.Any())
+                    {
+                        <div class="empty-state">
+                            <p class="mb-0">No orders matched the current filter.</p>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="admin-order-list">
+                            @foreach (var order in Model.RecentOrders)
+                            {
+                                <article class="admin-order-card">
+                                    <div class="d-flex flex-column flex-lg-row justify-content-between gap-3">
+                                        <div>
+                                            <div class="d-flex align-items-center gap-2 flex-wrap">
+                                                <strong>@order.OrderNumber</strong>
+                                                <span class="badge text-bg-dark">@order.Status</span>
+                                                <span class="badge text-bg-secondary">@order.PaymentStatus</span>
+                                            </div>
+                                            <div class="small text-muted mt-2">@order.CustomerName · @order.CustomerEmail</div>
+                                            <div class="small text-muted mt-1">@order.ShippingAddress</div>
+                                        </div>
+                                        <div class="text-lg-end">
+                                            <strong class="d-block">@order.Total.ToString("C")</strong>
+                                            <small class="text-muted">@order.CreatedAt.ToLocalTime().ToString("dd MMM yyyy, hh:mm tt")</small>
+                                        </div>
+                                    </div>
+
+                                    <div class="order-meta mt-3">
+                                        <span><i class="bi bi-bag me-1"></i>@order.ItemCount item(s)</span>
+                                        <span><i class="bi bi-credit-card me-1"></i>@order.PaymentMethod</span>
+                                        <span><i class="bi bi-bank me-1"></i>@order.PaymentType.Replace("_", " ")</span>
+                                        <span><i class="bi bi-truck me-1"></i>@order.DeliveryOption</span>
+                                        @if (!string.IsNullOrWhiteSpace(order.PaymentReference))
+                                        {
+                                            <span><i class="bi bi-upc-scan me-1"></i>@order.PaymentReference</span>
+                                        }
+                                        @if (!string.IsNullOrWhiteSpace(order.PaymentReceiptUrl))
+                                        {
+                                            <a href="@order.PaymentReceiptUrl" target="_blank" rel="noopener noreferrer">View receipt</a>
+                                        }
+                                    </div>
+
+                                    <form asp-action="UpdateOrderStatus" method="post" class="row g-2 mt-3 align-items-end">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="OrderReviewForm.OrderNumber" value="@order.OrderNumber" />
+                                        <div class="col-md-6 col-lg-3">
+                                            <label class="form-label small text-muted">Order status</label>
+                                            <select name="OrderReviewForm.Status" class="form-select">
+                                                @foreach (var status in statuses)
+                                                {
+                                                    <option value="@status" selected="@(status == order.Status)">@status</option>
+                                                }
+                                            </select>
+                                        </div>
+                                        <div class="col-md-6 col-lg-3">
+                                            <label class="form-label small text-muted">Payment status</label>
+                                            <select name="OrderReviewForm.PaymentStatus" class="form-select">
+                                                @foreach (var paymentStatus in paymentStatuses)
+                                                {
+                                                    <option value="@paymentStatus" selected="@(paymentStatus == order.PaymentStatus)">@paymentStatus</option>
+                                                }
+                                            </select>
+                                        </div>
+                                        <div class="col-lg-4">
+                                            <label class="form-label small text-muted">Review notes</label>
+                                            <input type="text" name="OrderReviewForm.PaymentReviewNotes" value="@order.PaymentReviewNotes" class="form-control" placeholder="Optional admin or finance note" />
+                                        </div>
+                                        <div class="col-lg-2">
+                                            <button class="btn btn-dark w-100" type="submit">Save</button>
+                                        </div>
+                                    </form>
+                                </article>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <div class="col-xl-4">
+            <div class="card shadow-sm h-100">
+                <div class="card-header">
+                    <h4 class="mb-0"><i class="bi bi-people me-2"></i>Top Customers</h4>
+                    <small class="text-muted">Loyalty snapshot from orders plus wishlist activity.</small>
+                </div>
+                <div class="card-body">
+                    @if (!Model.TopCustomers.Any())
+                    {
+                        <div class="empty-state">
+                            <p class="mb-0">No customer records available yet.</p>
+                        </div>
+                    }
+                    else
+                    {
+                        @foreach (var customer in Model.TopCustomers)
+                        {
+                            <article class="customer-insight-row">
+                                <div class="d-flex justify-content-between gap-3">
+                                    <div>
+                                        <strong class="d-block">@customer.FullName</strong>
+                                        <small class="text-muted">@customer.Email</small>
+                                    </div>
+                                    <div class="text-end">
+                                        <strong class="d-block">@customer.LifetimeValue.ToString("C")</strong>
+                                        <small class="text-muted">lifetime value</small>
+                                    </div>
+                                </div>
+                                <div class="order-meta mt-2">
+                                    <span><i class="bi bi-receipt me-1"></i>@customer.OrderCount order(s)</span>
+                                    <span><i class="bi bi-heart me-1"></i>@customer.WishlistCount wishlist item(s)</span>
+                                    <span><i class="bi bi-clock-history me-1"></i>@(customer.LastOrderAt.HasValue ? customer.LastOrderAt.Value.ToLocalTime().ToString("dd MMM yyyy") : "No orders yet")</span>
+                                </div>
+                            </article>
+                        }
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="card shadow-sm mb-5">
         <div class="card-header">
-            <h4 class="mb-0">
-                <i class="bi bi-image me-2"></i>Hero Campaign
-            </h4>
-            <small class="text-muted">Update your landing page banner without redeploying</small>
+            <h4 class="mb-0"><i class="bi bi-image me-2"></i>Hero Campaign</h4>
+            <small class="text-muted">Update your landing page banner without redeploying.</small>
         </div>
         <div class="card-body">
             <form asp-action="SaveHero" method="post" enctype="multipart/form-data">
                 @Html.AntiForgeryToken()
                 <div asp-validation-summary="ModelOnly" class="alert alert-danger"></div>
-
                 <div class="row g-3">
                     <div class="col-md-6">
                         <label asp-for="Hero.Title" class="form-label">Hero Title</label>
-                        <input asp-for="Hero.Title" class="form-control form-control-lg" placeholder="Enter hero title" />
-                        <span asp-validation-for="Hero.Title" class="text-danger small"></span>
+                        <input asp-for="Hero.Title" class="form-control form-control-lg" />
                     </div>
                     <div class="col-md-6">
                         <label asp-for="Hero.Subtitle" class="form-label">Hero Subtitle</label>
-                        <input asp-for="Hero.Subtitle" class="form-control form-control-lg" placeholder="Enter hero subtitle" />
-                        <span asp-validation-for="Hero.Subtitle" class="text-danger small"></span>
+                        <input asp-for="Hero.Subtitle" class="form-control form-control-lg" />
                     </div>
                     <div class="col-md-6">
                         <label class="form-label">Background Image URL</label>
-                        <input asp-for="Hero.BackgroundImageUrl" class="form-control" placeholder="https://example.com/image.jpg" />
+                        <input asp-for="Hero.BackgroundImageUrl" class="form-control" />
                     </div>
                     <div class="col-md-6">
                         <label class="form-label">Or Upload New Image</label>
                         <input type="file" name="HeroBackgroundImage" class="form-control" accept="image/jpeg,image/png" />
-                        <small class="text-muted">JPG or PNG. Max 5MB</small>
                     </div>
                     <div class="col-md-3">
                         <label asp-for="Hero.PrimaryCtaText" class="form-label">Primary CTA Text</label>
-                        <input asp-for="Hero.PrimaryCtaText" class="form-control" placeholder="e.g., Shop Now" />
+                        <input asp-for="Hero.PrimaryCtaText" class="form-control" />
                     </div>
                     <div class="col-md-3">
                         <label asp-for="Hero.PrimaryCtaLink" class="form-label">Primary CTA Link</label>
-                        <input asp-for="Hero.PrimaryCtaLink" class="form-control" placeholder="e.g., /catalog" />
+                        <input asp-for="Hero.PrimaryCtaLink" class="form-control" />
                     </div>
                     <div class="col-md-3">
                         <label asp-for="Hero.SecondaryCtaText" class="form-label">Secondary CTA Text</label>
-                        <input asp-for="Hero.SecondaryCtaText" class="form-control" placeholder="e.g., Learn More" />
+                        <input asp-for="Hero.SecondaryCtaText" class="form-control" />
                     </div>
                     <div class="col-md-3">
                         <label asp-for="Hero.SecondaryCtaLink" class="form-label">Secondary CTA Link</label>
-                        <input asp-for="Hero.SecondaryCtaLink" class="form-control" placeholder="e.g., /catalog" />
+                        <input asp-for="Hero.SecondaryCtaLink" class="form-control" />
                     </div>
                 </div>
-
                 <div class="mt-4 d-flex gap-2">
-                    <button class="btn btn-dark" type="submit">
-                        <i class="bi bi-save me-2"></i>Save Campaign
-                    </button>
+                    <button class="btn btn-dark" type="submit"><i class="bi bi-save me-2"></i>Save Campaign</button>
                     <button class="btn btn-outline-secondary" type="reset">Reset</button>
                 </div>
             </form>
         </div>
     </div>
 
-    <!-- Categories Management -->
     <div class="card shadow-sm mb-5">
         <div class="card-header">
-            <h4 class="mb-0">
-                <i class="bi bi-tags me-2"></i>Categories
-            </h4>
-            <small class="text-muted">Add and manage product categories</small>
+            <h4 class="mb-0"><i class="bi bi-tags me-2"></i>Categories</h4>
+            <small class="text-muted">Add and manage product categories.</small>
         </div>
         <div class="card-body">
-            <form asp-action="SaveCategory" method="post" class="mb-3">
+            <form asp-action="SaveCategory" method="post" class="mb-3" id="category-form" data-admin-form="category" data-create-label="Save" data-update-label="Update">
                 @Html.AntiForgeryToken()
                 <input asp-for="CategoryForm.Id" type="hidden" />
                 <div class="row g-2">
@@ -157,8 +331,11 @@
                         </div>
                     </div>
                     <div class="col-md-1 d-flex">
-                        <button class="btn btn-dark w-100" type="submit">@(isEditingCategory ? "Update" : "Save")</button>
+                        <button class="btn btn-dark w-100 js-admin-submit-label" type="submit">@(isEditingCategory ? "Update" : "Save")</button>
                     </div>
+                </div>
+                <div class="mt-3">
+                    <button class="btn btn-outline-secondary js-admin-reset" type="button" data-target-form="category-form">Clear</button>
                 </div>
             </form>
 
@@ -172,7 +349,22 @@
                         </div>
                         <div class="d-flex align-items-center gap-3">
                             <div class="text-muted small">ID: @c.Id</div>
-                            <a class="btn btn-sm btn-outline-dark" href="/admin?categoryId=@c.Id">Edit</a>
+                            <span class="badge js-admin-status-badge @(c.IsActive ? "text-bg-success" : "text-bg-secondary")">@(c.IsActive ? "Active" : "Inactive")</span>
+                            <button class="btn btn-sm btn-outline-dark js-admin-edit" type="button"
+                                    data-target-form="category-form"
+                                    data-id="@c.Id"
+                                    data-name="@c.Name"
+                                    data-description="@c.Description"
+                                    data-is-active="@c.IsActive.ToString().ToLowerInvariant()">Edit</button>
+                            <form asp-action="ToggleCategory" asp-route-id="@c.Id" method="post" class="d-inline js-admin-toggle-form">
+                                @Html.AntiForgeryToken()
+                                <input type="hidden" name="isActive" value="@(!c.IsActive)" />
+                                <button class="btn btn-sm btn-outline-secondary js-admin-toggle-button" type="submit" data-active-text="Inactive" data-inactive-text="Activate">@(c.IsActive ? "Inactive" : "Activate")</button>
+                            </form>
+                            <form asp-action="DeleteCategory" asp-route-id="@c.Id" method="post" class="d-inline">
+                                @Html.AntiForgeryToken()
+                                <button class="btn btn-sm btn-outline-danger" type="submit">Delete</button>
+                            </form>
                         </div>
                     </div>
                 }
@@ -180,35 +372,31 @@
         </div>
     </div>
 
-    <!-- Products Section -->
     <div class="card shadow-sm mb-5">
         <div class="card-header">
-            <h4 class="mb-0">
-                <i class="bi bi-box-seam me-2"></i>Product Lineup
-            </h4>
-            <small class="text-muted">Manage your fragrance catalog via sp_product_upsert</small>
+            <h4 class="mb-0"><i class="bi bi-box-seam me-2"></i>Product Lineup</h4>
+            <small class="text-muted">Manage your fragrance catalog.</small>
         </div>
         <div class="card-body">
-            <form asp-action="SaveProduct" method="post" enctype="multipart/form-data">
+            <form asp-action="SaveProduct" method="post" enctype="multipart/form-data" id="product-form" data-admin-form="product" data-create-label="Save Product" data-update-label="Update Product">
                 @Html.AntiForgeryToken()
                 <input asp-for="ProductForm.Id" type="hidden" />
-
                 <div class="row g-3">
                     <div class="col-md-5">
                         <label asp-for="ProductForm.Name" class="form-label">Product Name</label>
-                        <input asp-for="ProductForm.Name" class="form-control" placeholder="e.g., Rose Garden" />
+                        <input asp-for="ProductForm.Name" class="form-control" />
                     </div>
                     <div class="col-md-7">
                         <label asp-for="ProductForm.Description" class="form-label">Description</label>
-                        <input asp-for="ProductForm.Description" class="form-control" placeholder="Brief product description" />
+                        <input asp-for="ProductForm.Description" class="form-control" />
                     </div>
                     <div class="col-md-3">
                         <label asp-for="ProductForm.Price" class="form-label">Price</label>
-                        <input asp-for="ProductForm.Price" class="form-control" type="number" step="0.01" placeholder="99.99" />
+                        <input asp-for="ProductForm.Price" class="form-control" type="number" step="0.01" />
                     </div>
                     <div class="col-md-3">
-                        <label asp-for="ProductForm.DiscountPrice" class="form-label">Discount Price (Optional)</label>
-                        <input asp-for="ProductForm.DiscountPrice" class="form-control" type="number" step="0.01" placeholder="79.99" />
+                        <label asp-for="ProductForm.DiscountPrice" class="form-label">Discount Price</label>
+                        <input asp-for="ProductForm.DiscountPrice" class="form-control" type="number" step="0.01" />
                     </div>
                     <div class="col-md-3">
                         <label asp-for="ProductForm.CategoryId" class="form-label">Category</label>
@@ -221,12 +409,11 @@
                     </div>
                     <div class="col-md-3">
                         <label asp-for="ProductForm.StockQuantity" class="form-label">Stock Quantity</label>
-                        <input asp-for="ProductForm.StockQuantity" class="form-control" type="number" placeholder="10" />
+                        <input asp-for="ProductForm.StockQuantity" class="form-control" type="number" />
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label">Product Image (upload)</label>
+                        <label class="form-label">Product Image</label>
                         <input type="file" name="ProductImage" class="form-control" accept="image/*" />
-                        <small class="text-muted">Upload JPG/PNG. If left empty the existing URL will be kept.</small>
                         <input asp-for="ProductForm.ImageUrl" type="hidden" />
                     </div>
                     <div class="col-md-6">
@@ -243,136 +430,187 @@
                         </div>
                     </div>
                 </div>
-
                 <div class="mt-4 d-flex gap-2">
-                    <button class="btn btn-dark" type="submit">
-                        <i class="bi @(isEditingProduct ? "bi-save" : "bi-plus-circle") me-2"></i>@(isEditingProduct ? "Update Product" : "Save Product")
-                    </button>
-                    <a class="btn btn-outline-secondary" href="/admin">Clear</a>
+                    <button class="btn btn-dark js-admin-submit-label" type="submit"><i class="bi @(isEditingProduct ? "bi-save" : "bi-plus-circle") me-2"></i><span>@(isEditingProduct ? "Update Product" : "Save Product")</span></button>
+                    <button class="btn btn-outline-secondary js-admin-reset" type="button" data-target-form="product-form">Clear</button>
                 </div>
             </form>
 
-            <!-- Products Table -->
             @if (Model.Products.Any())
             {
                 <div class="table-responsive mt-4">
                     <table class="table table-hover align-middle">
-                            <thead class="table-light">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Image</th>
+                                <th>Name</th>
+                                <th>Category</th>
+                                <th>Price</th>
+                                <th>Stock</th>
+                                <th>Featured</th>
+                                <th>Trending</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var product in Model.Products)
+                            {
                                 <tr>
-                                    <th>Image</th>
-                                    <th>Name</th>
-                                    <th>Category</th>
-                                    <th>Price</th>
-                                    <th>Stock</th>
-                                    <th>Featured</th>
-                                    <th>Trending</th>
-                                    <th></th>
+                                    <td style="width:80px;">
+                                        @if (!string.IsNullOrEmpty(product.ImageUrl))
+                                        {
+                                            <img src="@product.ImageUrl" alt="@product.Name" style="width:64px;height:64px;object-fit:cover;border-radius:8px;" />
+                                        }
+                                    </td>
+                                    <td class="fw-bold">@product.Name</td>
+                                    <td><span class="badge bg-light text-dark">@product.CategoryName</span></td>
+                                    <td>@product.Price.ToString("C")</td>
+                                    <td>@product.StockQuantity</td>
+                                    <td>@if (product.IsFeatured) { <i class="bi bi-check-circle-fill text-success"></i> }</td>
+                                    <td>@if (product.IsTrending) { <i class="bi bi-fire text-warning"></i> }</td>
+                                    <td class="text-end">
+                                        <div class="d-inline-flex gap-2">
+                                            <button class="btn btn-sm btn-outline-dark js-admin-edit" type="button"
+                                                    data-target-form="product-form"
+                                                    data-id="@product.Id"
+                                                    data-name="@product.Name"
+                                                    data-description="@product.Description"
+                                                    data-price="@product.Price"
+                                                    data-discount-price="@product.DiscountPrice"
+                                                    data-category-id="@product.CategoryId"
+                                                    data-stock-quantity="@product.StockQuantity"
+                                                    data-image-url="@product.ImageUrl"
+                                                    data-is-featured="@product.IsFeatured.ToString().ToLowerInvariant()"
+                                                    data-is-trending="@product.IsTrending.ToString().ToLowerInvariant()">Edit</button>
+                                            <form asp-action="DeleteProduct" asp-route-id="@product.Id" method="post" class="d-inline">
+                                                @Html.AntiForgeryToken()
+                                                <button class="btn btn-sm btn-outline-danger" type="submit">Delete</button>
+                                            </form>
+                                        </div>
+                                    </td>
                                 </tr>
-                            </thead>
-                            <tbody>
-                                @foreach (var product in Model.Products)
-                                {
-                                    <tr>
-                                        <td style="width:80px;">
-                                            @if (!string.IsNullOrEmpty(product.ImageUrl))
-                                            {
-                                                <img src="@product.ImageUrl" alt="@product.Name" style="width:64px;height:64px;object-fit:cover;border-radius:8px;" />
-                                            }
-                                            else
-                                            {
-                                                <div class="bg-light d-flex align-items-center justify-content-center" style="width:64px;height:64px;border-radius:8px;">
-                                                    <i class="bi bi-image text-muted"></i>
-                                                </div>
-                                            }
-                                        </td>
-                                        <td class="fw-bold">@product.Name</td>
-                                        <td>
-                                            <span class="badge bg-light text-dark">@product.CategoryName</span>
-                                        </td>
-                                        <td>@product.Price.ToString("C")</td>
-                                        <td>@product.StockQuantity</td>
-                                        <td>
-                                            @if (product.IsFeatured)
-                                            {
-                                                <i class="bi bi-check-circle-fill text-success"></i>
-                                            }
-                                        </td>
-                                        <td>
-                                            @if (product.IsTrending)
-                                            {
-                                                <i class="bi bi-fire text-warning"></i>
-                                            }
-                                        </td>
-                                        <td class="text-end">
-                                            <a class="btn btn-sm btn-outline-dark" href="/admin?productId=@product.Id">Edit</a>
-                                        </td>
-                                    </tr>
-                                }
-                            </tbody>
-                        </table>
+                            }
+                        </tbody>
+                    </table>
                 </div>
             }
         </div>
     </div>
 
-    <!-- Payment & Delivery Config -->
     <div class="row g-4 mb-5">
-        <!-- Payment Methods -->
         <div class="col-lg-6">
             <div class="card shadow-sm h-100">
                 <div class="card-header">
-                    <h4 class="mb-0">
-                        <i class="bi bi-credit-card me-2"></i>Payment Rails
-                    </h4>
-                    <small class="text-muted">Configure payment options</small>
+                    <h4 class="mb-0"><i class="bi bi-credit-card me-2"></i>Payment Rails</h4>
+                    <small class="text-muted">Choose partner-bank or manual mode. Manual mode exposes account details to customers and enables receipt review.</small>
                 </div>
                 <div class="card-body">
-                    <form asp-action="SavePayment" method="post">
+                    <form asp-action="SavePayment" method="post" id="payment-form" data-admin-form="payment" data-create-label="Save Method" data-update-label="Update Method">
                         @Html.AntiForgeryToken()
                         <input asp-for="PaymentForm.Id" type="hidden" />
-                        <div class="mb-3">
-                            <label asp-for="PaymentForm.Name" class="form-label">Method Name</label>
-                            <input asp-for="PaymentForm.Name" class="form-control" placeholder="e.g., Credit Card" />
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label asp-for="PaymentForm.Name" class="form-label">Method Name</label>
+                                <input asp-for="PaymentForm.Name" class="form-control" />
+                            </div>
+                            <div class="col-md-6">
+                                <label asp-for="PaymentForm.Provider" class="form-label">Provider</label>
+                                <input asp-for="PaymentForm.Provider" class="form-control" />
+                            </div>
+                            <div class="col-md-6">
+                                <label asp-for="PaymentForm.PaymentType" class="form-label">Payment Mode</label>
+                                <select asp-for="PaymentForm.PaymentType" class="form-select">
+                                    <option value="manual">Manual Bank Transfer</option>
+                                    <option value="partner_bank">Partner Bank</option>
+                                    <option value="offline">Offline / Cash</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label asp-for="PaymentForm.PartnerName" class="form-label">Partner Name</label>
+                                <input asp-for="PaymentForm.PartnerName" class="form-control" />
+                            </div>
+                            <div class="col-md-6">
+                                <label asp-for="PaymentForm.ProcessingFee" class="form-label">Processing Fee</label>
+                                <input asp-for="PaymentForm.ProcessingFee" class="form-control" type="number" step="0.01" />
+                            </div>
+                            <div class="col-md-6">
+                                <label asp-for="PaymentForm.BankName" class="form-label">Bank Name</label>
+                                <input asp-for="PaymentForm.BankName" class="form-control" />
+                            </div>
+                            <div class="col-md-6">
+                                <label asp-for="PaymentForm.AccountTitle" class="form-label">Account Title</label>
+                                <input asp-for="PaymentForm.AccountTitle" class="form-control" />
+                            </div>
+                            <div class="col-md-6">
+                                <label asp-for="PaymentForm.AccountNumber" class="form-label">Account Number</label>
+                                <input asp-for="PaymentForm.AccountNumber" class="form-control" />
+                            </div>
+                            <div class="col-md-6">
+                                <label asp-for="PaymentForm.Iban" class="form-label">IBAN</label>
+                                <input asp-for="PaymentForm.Iban" class="form-control" />
+                            </div>
+                            <div class="col-md-6">
+                                <label asp-for="PaymentForm.Instructions" class="form-label">Customer Instructions</label>
+                                <textarea asp-for="PaymentForm.Instructions" class="form-control" rows="3"></textarea>
+                            </div>
+                            <div class="col-12 d-flex flex-wrap gap-4">
+                                <div class="form-check">
+                                    <input asp-for="PaymentForm.SupportsInstallments" class="form-check-input" type="checkbox" id="installments" />
+                                    <label class="form-check-label" for="installments">Supports Installments</label>
+                                </div>
+                                <div class="form-check">
+                                    <input asp-for="PaymentForm.RequiresReceipt" class="form-check-input" type="checkbox" id="requiresReceipt" />
+                                    <label class="form-check-label" for="requiresReceipt">Requires Receipt Upload</label>
+                                </div>
+                                <div class="form-check">
+                                    <input asp-for="PaymentForm.IsActive" class="form-check-input" type="checkbox" id="paymentActive" />
+                                    <label class="form-check-label" for="paymentActive">Active</label>
+                                </div>
+                            </div>
                         </div>
-                        <div class="mb-3">
-                            <label asp-for="PaymentForm.Provider" class="form-label">Provider</label>
-                            <input asp-for="PaymentForm.Provider" class="form-control" placeholder="e.g., Stripe, PayPal" />
+                        <div class="d-flex gap-2 mt-4">
+                            <button class="btn btn-dark flex-grow-1 js-admin-submit-label" type="submit"><i class="bi bi-save me-2"></i><span>@(isEditingPayment ? "Update Method" : "Save Method")</span></button>
+                            <button class="btn btn-outline-secondary js-admin-reset" type="button" data-target-form="payment-form">Clear</button>
                         </div>
-                        <div class="mb-3">
-                            <label asp-for="PaymentForm.ProcessingFee" class="form-label">Processing Fee</label>
-                            <input asp-for="PaymentForm.ProcessingFee" class="form-control" type="number" step="0.01" placeholder="2.99" />
-                        </div>
-                        <div class="form-check mb-3">
-                            <input asp-for="PaymentForm.SupportsInstallments" class="form-check-input" type="checkbox" id="installments" />
-                            <label class="form-check-label" for="installments">
-                                Supports Installments
-                            </label>
-                        </div>
-                        <div class="form-check mb-3">
-                            <input asp-for="PaymentForm.IsActive" class="form-check-input" type="checkbox" id="paymentActive" />
-                            <label class="form-check-label" for="paymentActive">
-                                Active
-                            </label>
-                        </div>
-                        <button class="btn btn-dark w-100" type="submit">
-                            <i class="bi bi-save me-2"></i>@(isEditingPayment ? "Update Method" : "Save Method")
-                        </button>
                     </form>
 
                     <div class="mt-4">
-                        <label class="form-label fw-bold mb-3">Active Methods</label>
+                        <label class="form-label fw-bold mb-3">Configured Methods</label>
                         <div class="list-group list-group-flush">
                             @foreach (var payment in Model.PaymentMethods)
                             {
                                 <div class="list-group-item d-flex justify-content-between align-items-center">
                                     <div>
-                                        <strong>@payment.Name</strong>
-                                        <br>
-                                        <small class="text-muted">@payment.Provider</small>
+                                        <strong>@payment.Name</strong><br />
+                                        <small class="text-muted">@payment.Provider · @payment.PaymentType.Replace("_", " ")</small>
                                     </div>
                                     <div class="text-end d-flex align-items-center gap-3">
                                         <div class="badge bg-light text-dark">@payment.ProcessingFee.ToString("C")</div>
-                                        <a class="btn btn-sm btn-outline-dark" href="/admin?paymentMethodId=@payment.Id">Edit</a>
+                                        <button class="btn btn-sm btn-outline-dark js-admin-edit" type="button"
+                                                data-target-form="payment-form"
+                                                data-id="@payment.Id"
+                                                data-name="@payment.Name"
+                                                data-provider="@payment.Provider"
+                                                data-payment-type="@payment.PaymentType"
+                                                data-partner-name="@payment.PartnerName"
+                                                data-processing-fee="@payment.ProcessingFee"
+                                                data-supports-installments="@payment.SupportsInstallments.ToString().ToLowerInvariant()"
+                                                data-is-active="@payment.IsActive.ToString().ToLowerInvariant()"
+                                                data-account-title="@payment.AccountTitle"
+                                                data-account-number="@payment.AccountNumber"
+                                                data-bank-name="@payment.BankName"
+                                                data-iban="@payment.Iban"
+                                                data-instructions="@payment.Instructions"
+                                                data-requires-receipt="@payment.RequiresReceipt.ToString().ToLowerInvariant()">Edit</button>
+                                        <form asp-action="TogglePayment" asp-route-id="@payment.Id" method="post" class="d-inline js-admin-toggle-form">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="isActive" value="@(!payment.IsActive)" />
+                                            <button class="btn btn-sm btn-outline-secondary js-admin-toggle-button" type="submit" data-active-text="Inactive" data-inactive-text="Activate">@(payment.IsActive ? "Inactive" : "Activate")</button>
+                                        </form>
+                                        <form asp-action="DeletePayment" asp-route-id="@payment.Id" method="post" class="d-inline">
+                                            @Html.AntiForgeryToken()
+                                            <button class="btn btn-sm btn-outline-danger" type="submit">Delete</button>
+                                        </form>
                                     </div>
                                 </div>
                             }
@@ -382,46 +620,42 @@
             </div>
         </div>
 
-        <!-- Delivery Options -->
         <div class="col-lg-6">
             <div class="card shadow-sm h-100">
                 <div class="card-header">
-                    <h4 class="mb-0">
-                        <i class="bi bi-truck me-2"></i>Delivery Promise
-                    </h4>
-                    <small class="text-muted">Configure delivery options and fees</small>
+                    <h4 class="mb-0"><i class="bi bi-truck me-2"></i>Delivery Promise</h4>
+                    <small class="text-muted">Configure delivery options and fees.</small>
                 </div>
                 <div class="card-body">
-                    <form asp-action="SaveDelivery" method="post">
+                    <form asp-action="SaveDelivery" method="post" id="delivery-form" data-admin-form="delivery" data-create-label="Save Option" data-update-label="Update Option">
                         @Html.AntiForgeryToken()
                         <input asp-for="DeliveryForm.Id" type="hidden" />
                         <div class="mb-3">
                             <label asp-for="DeliveryForm.Name" class="form-label">Option Name</label>
-                            <input asp-for="DeliveryForm.Name" class="form-control" placeholder="e.g., Standard Delivery" />
+                            <input asp-for="DeliveryForm.Name" class="form-control" />
                         </div>
                         <div class="mb-3">
                             <label asp-for="DeliveryForm.Description" class="form-label">Description</label>
-                            <input asp-for="DeliveryForm.Description" class="form-control" placeholder="e.g., 5-7 business days" />
+                            <input asp-for="DeliveryForm.Description" class="form-control" />
                         </div>
                         <div class="row g-3 mb-3">
                             <div class="col-md-6">
                                 <label asp-for="DeliveryForm.Fee" class="form-label">Shipping Fee</label>
-                                <input asp-for="DeliveryForm.Fee" class="form-control" type="number" step="0.01" placeholder="9.99" />
+                                <input asp-for="DeliveryForm.Fee" class="form-control" type="number" step="0.01" />
                             </div>
                             <div class="col-md-6">
                                 <label asp-for="DeliveryForm.EstimatedDays" class="form-label">Est. Days</label>
-                                <input asp-for="DeliveryForm.EstimatedDays" class="form-control" type="number" placeholder="5" />
+                                <input asp-for="DeliveryForm.EstimatedDays" class="form-control" type="number" />
                             </div>
                         </div>
                         <div class="form-check mb-3">
                             <input asp-for="DeliveryForm.IsActive" class="form-check-input" type="checkbox" id="deliveryActive" />
-                            <label class="form-check-label" for="deliveryActive">
-                                Active
-                            </label>
+                            <label class="form-check-label" for="deliveryActive">Active</label>
                         </div>
-                        <button class="btn btn-dark w-100" type="submit">
-                            <i class="bi bi-save me-2"></i>@(isEditingDelivery ? "Update Option" : "Save Option")
-                        </button>
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-dark flex-grow-1 js-admin-submit-label" type="submit"><i class="bi bi-save me-2"></i><span>@(isEditingDelivery ? "Update Option" : "Save Option")</span></button>
+                            <button class="btn btn-outline-secondary js-admin-reset" type="button" data-target-form="delivery-form">Clear</button>
+                        </div>
                     </form>
 
                     <div class="mt-4">
@@ -431,15 +665,32 @@
                             {
                                 <div class="list-group-item d-flex justify-content-between align-items-center">
                                     <div>
-                                        <strong>@delivery.Name</strong>
-                                        <br>
+                                        <strong>@delivery.Name</strong><br />
                                         <small class="text-muted">@delivery.Description</small>
                                     </div>
                                     <div class="text-end d-flex align-items-center gap-3">
                                         <div class="badge bg-light text-dark mb-2">@delivery.Fee.ToString("C")</div>
                                         <div>
                                             <small class="text-muted d-block">@delivery.EstimatedDays day(s)</small>
-                                            <a class="btn btn-sm btn-outline-dark mt-1" href="/admin?deliveryOptionId=@delivery.Id">Edit</a>
+                                            <div class="d-flex flex-wrap gap-2 mt-1 justify-content-end">
+                                                <button class="btn btn-sm btn-outline-dark js-admin-edit" type="button"
+                                                        data-target-form="delivery-form"
+                                                        data-id="@delivery.Id"
+                                                        data-name="@delivery.Name"
+                                                        data-description="@delivery.Description"
+                                                        data-fee="@delivery.Fee"
+                                                        data-estimated-days="@delivery.EstimatedDays"
+                                                        data-is-active="@delivery.IsActive.ToString().ToLowerInvariant()">Edit</button>
+                                                <form asp-action="ToggleDelivery" asp-route-id="@delivery.Id" method="post" class="d-inline js-admin-toggle-form">
+                                                    @Html.AntiForgeryToken()
+                                                    <input type="hidden" name="isActive" value="@(!delivery.IsActive)" />
+                                                    <button class="btn btn-sm btn-outline-secondary js-admin-toggle-button" type="submit" data-active-text="Inactive" data-inactive-text="Activate">@(delivery.IsActive ? "Inactive" : "Activate")</button>
+                                                </form>
+                                                <form asp-action="DeleteDelivery" asp-route-id="@delivery.Id" method="post" class="d-inline">
+                                                    @Html.AntiForgeryToken()
+                                                    <button class="btn btn-sm btn-outline-danger" type="submit">Delete</button>
+                                                </form>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -450,8 +701,315 @@
             </div>
         </div>
     </div>
+
+    @if (User.IsInRole("admin"))
+    {
+        <div class="card shadow-sm mb-5">
+            <div class="card-header">
+                <h4 class="mb-0"><i class="bi bi-person-gear me-2"></i>User Management</h4>
+                <small class="text-muted">Suggested roles for this perfume CMS: admin, operations manager, catalog manager, finance manager, and customer.</small>
+            </div>
+            <div class="card-body">
+                <form asp-action="SaveUser" method="post" class="mb-4" id="user-form" data-admin-form="user" data-create-label="Create User" data-update-label="Update User">
+                    @Html.AntiForgeryToken()
+                    <input asp-for="UserForm.Id" type="hidden" />
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label asp-for="UserForm.FullName" class="form-label">Full Name</label>
+                            <input asp-for="UserForm.FullName" class="form-control" />
+                        </div>
+                        <div class="col-md-4">
+                            <label asp-for="UserForm.Username" class="form-label">Email / Username</label>
+                            <input asp-for="UserForm.Username" class="form-control" />
+                        </div>
+                        <div class="col-md-4">
+                            <label asp-for="UserForm.Role" class="form-label">Role</label>
+                            <select asp-for="UserForm.Role" class="form-select">
+                                @foreach (var role in roles)
+                                {
+                                    <option value="@role.Item1">@role.Item2</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label asp-for="UserForm.Password" class="form-label">Password</label>
+                            <input asp-for="UserForm.Password" type="password" class="form-control" placeholder="Required for new users only" />
+                        </div>
+                        <div class="col-md-3 d-flex align-items-center">
+                            <div class="form-check mt-4">
+                                <input asp-for="UserForm.IsActive" class="form-check-input" />
+                                <label asp-for="UserForm.IsActive" class="form-check-label">Active account</label>
+                            </div>
+                        </div>
+                        <div class="col-md-5 d-flex align-items-end gap-2">
+                            <button class="btn btn-dark js-admin-submit-label" type="submit">@(isEditingUser ? "Update User" : "Create User")</button>
+                            <button class="btn btn-outline-secondary js-admin-reset" type="button" data-target-form="user-form">Clear</button>
+                        </div>
+                    </div>
+                </form>
+
+                <div class="table-responsive">
+                    <table class="table align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Name</th>
+                                <th>Username</th>
+                                <th>Role</th>
+                                <th>Status</th>
+                                <th>Created</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var user in Model.Users)
+                            {
+                                <tr>
+                                    <td>@user.FullName</td>
+                                    <td>@user.Username</td>
+                                    <td><span class="badge bg-light text-dark">@user.Role.Replace("_", " ")</span></td>
+                                    <td>
+                                        @if (user.IsActive)
+                                        {
+                                            <span class="badge js-admin-status-badge text-bg-success">Active</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge js-admin-status-badge text-bg-secondary">Inactive</span>
+                                        }
+                                    </td>
+                                    <td>@user.CreatedAt.ToLocalTime().ToString("dd MMM yyyy")</td>
+                                    <td class="text-end">
+                                        <div class="d-inline-flex gap-2">
+                                            <button class="btn btn-sm btn-outline-dark js-admin-edit" type="button"
+                                                    data-target-form="user-form"
+                                                    data-id="@user.Id"
+                                                    data-full-name="@user.FullName"
+                                                    data-username="@user.Username"
+                                                    data-role="@user.Role"
+                                                    data-is-active="@user.IsActive.ToString().ToLowerInvariant()">Edit</button>
+                                            <form asp-action="ToggleUser" asp-route-id="@user.Id" method="post" class="d-inline js-admin-toggle-form">
+                                                @Html.AntiForgeryToken()
+                                                <input type="hidden" name="isActive" value="@(!user.IsActive)" />
+                                                <button class="btn btn-sm btn-outline-secondary js-admin-toggle-button" type="submit" data-active-text="Inactive" data-inactive-text="Activate">@(user.IsActive ? "Inactive" : "Activate")</button>
+                                            </form>
+                                            <form asp-action="DeleteUser" asp-route-id="@user.Id" method="post" class="d-inline">
+                                                @Html.AntiForgeryToken()
+                                                <button class="btn btn-sm btn-outline-danger" type="submit">Delete</button>
+                                            </form>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    }
 </section>
 
 @section Scripts {
     <partial name="_ValidationScriptsPartial" />
+    <script>
+        (() => {
+            const formConfigs = {
+                "category-form": {
+                    setCreateState: (form) => {
+                        form.querySelector('[name="CategoryForm.Id"]').value = "0";
+                        form.querySelector('[name="CategoryForm.Name"]').value = "";
+                        form.querySelector('[name="CategoryForm.Description"]').value = "";
+                        form.querySelector('[name="CategoryForm.IsActive"]').checked = true;
+                    },
+                    setEditState: (form, data) => {
+                        form.querySelector('[name="CategoryForm.Id"]').value = data.id || "0";
+                        form.querySelector('[name="CategoryForm.Name"]').value = data.name || "";
+                        form.querySelector('[name="CategoryForm.Description"]').value = data.description || "";
+                        form.querySelector('[name="CategoryForm.IsActive"]').checked = data.isActive === "true";
+                    }
+                },
+                "product-form": {
+                    setCreateState: (form) => {
+                        form.querySelector('[name="ProductForm.Id"]').value = "0";
+                        form.querySelector('[name="ProductForm.Name"]').value = "";
+                        form.querySelector('[name="ProductForm.Description"]').value = "";
+                        form.querySelector('[name="ProductForm.Price"]').value = "";
+                        form.querySelector('[name="ProductForm.DiscountPrice"]').value = "";
+                        form.querySelector('[name="ProductForm.StockQuantity"]').value = "";
+                        form.querySelector('[name="ProductForm.ImageUrl"]').value = "/images/product-placeholder.jpg";
+                        form.querySelector('[name="ProductForm.CategoryId"]').selectedIndex = 0;
+                        form.querySelector('[name="ProductForm.IsFeatured"]').checked = false;
+                        form.querySelector('[name="ProductForm.IsTrending"]').checked = false;
+                        const imageInput = form.querySelector('[name="ProductImage"]');
+                        if (imageInput) imageInput.value = "";
+                    },
+                    setEditState: (form, data) => {
+                        form.querySelector('[name="ProductForm.Id"]').value = data.id || "0";
+                        form.querySelector('[name="ProductForm.Name"]').value = data.name || "";
+                        form.querySelector('[name="ProductForm.Description"]').value = data.description || "";
+                        form.querySelector('[name="ProductForm.Price"]').value = data.price || "";
+                        form.querySelector('[name="ProductForm.DiscountPrice"]').value = data.discountPrice || "";
+                        form.querySelector('[name="ProductForm.StockQuantity"]').value = data.stockQuantity || "";
+                        form.querySelector('[name="ProductForm.ImageUrl"]').value = data.imageUrl || "/images/product-placeholder.jpg";
+                        form.querySelector('[name="ProductForm.CategoryId"]').value = data.categoryId || "";
+                        form.querySelector('[name="ProductForm.IsFeatured"]').checked = data.isFeatured === "true";
+                        form.querySelector('[name="ProductForm.IsTrending"]').checked = data.isTrending === "true";
+                    }
+                },
+                "payment-form": {
+                    setCreateState: (form) => {
+                        form.querySelector('[name="PaymentForm.Id"]').value = "0";
+                        form.querySelector('[name="PaymentForm.Name"]').value = "";
+                        form.querySelector('[name="PaymentForm.Provider"]').value = "";
+                        form.querySelector('[name="PaymentForm.PaymentType"]').value = "manual";
+                        form.querySelector('[name="PaymentForm.PartnerName"]').value = "";
+                        form.querySelector('[name="PaymentForm.ProcessingFee"]').value = "0";
+                        form.querySelector('[name="PaymentForm.SupportsInstallments"]').checked = false;
+                        form.querySelector('[name="PaymentForm.IsActive"]').checked = true;
+                        form.querySelector('[name="PaymentForm.AccountTitle"]').value = "";
+                        form.querySelector('[name="PaymentForm.AccountNumber"]').value = "";
+                        form.querySelector('[name="PaymentForm.BankName"]').value = "";
+                        form.querySelector('[name="PaymentForm.Iban"]').value = "";
+                        form.querySelector('[name="PaymentForm.Instructions"]').value = "";
+                        form.querySelector('[name="PaymentForm.RequiresReceipt"]').checked = true;
+                    },
+                    setEditState: (form, data) => {
+                        form.querySelector('[name="PaymentForm.Id"]').value = data.id || "0";
+                        form.querySelector('[name="PaymentForm.Name"]').value = data.name || "";
+                        form.querySelector('[name="PaymentForm.Provider"]').value = data.provider || "";
+                        form.querySelector('[name="PaymentForm.PaymentType"]').value = data.paymentType || "manual";
+                        form.querySelector('[name="PaymentForm.PartnerName"]').value = data.partnerName || "";
+                        form.querySelector('[name="PaymentForm.ProcessingFee"]').value = data.processingFee || "0";
+                        form.querySelector('[name="PaymentForm.SupportsInstallments"]').checked = data.supportsInstallments === "true";
+                        form.querySelector('[name="PaymentForm.IsActive"]').checked = data.isActive === "true";
+                        form.querySelector('[name="PaymentForm.AccountTitle"]').value = data.accountTitle || "";
+                        form.querySelector('[name="PaymentForm.AccountNumber"]').value = data.accountNumber || "";
+                        form.querySelector('[name="PaymentForm.BankName"]').value = data.bankName || "";
+                        form.querySelector('[name="PaymentForm.Iban"]').value = data.iban || "";
+                        form.querySelector('[name="PaymentForm.Instructions"]').value = data.instructions || "";
+                        form.querySelector('[name="PaymentForm.RequiresReceipt"]').checked = data.requiresReceipt === "true";
+                    }
+                },
+                "delivery-form": {
+                    setCreateState: (form) => {
+                        form.querySelector('[name="DeliveryForm.Id"]').value = "0";
+                        form.querySelector('[name="DeliveryForm.Name"]').value = "";
+                        form.querySelector('[name="DeliveryForm.Description"]').value = "";
+                        form.querySelector('[name="DeliveryForm.Fee"]').value = "0";
+                        form.querySelector('[name="DeliveryForm.EstimatedDays"]').value = "";
+                        form.querySelector('[name="DeliveryForm.IsActive"]').checked = true;
+                    },
+                    setEditState: (form, data) => {
+                        form.querySelector('[name="DeliveryForm.Id"]').value = data.id || "0";
+                        form.querySelector('[name="DeliveryForm.Name"]').value = data.name || "";
+                        form.querySelector('[name="DeliveryForm.Description"]').value = data.description || "";
+                        form.querySelector('[name="DeliveryForm.Fee"]').value = data.fee || "0";
+                        form.querySelector('[name="DeliveryForm.EstimatedDays"]').value = data.estimatedDays || "";
+                        form.querySelector('[name="DeliveryForm.IsActive"]').checked = data.isActive === "true";
+                    }
+                },
+                "user-form": {
+                    setCreateState: (form) => {
+                        form.querySelector('[name="UserForm.Id"]').value = "0";
+                        form.querySelector('[name="UserForm.FullName"]').value = "";
+                        form.querySelector('[name="UserForm.Username"]').value = "";
+                        form.querySelector('[name="UserForm.Role"]').value = "customer";
+                        form.querySelector('[name="UserForm.Password"]').value = "";
+                        form.querySelector('[name="UserForm.IsActive"]').checked = true;
+                    },
+                    setEditState: (form, data) => {
+                        form.querySelector('[name="UserForm.Id"]').value = data.id || "0";
+                        form.querySelector('[name="UserForm.FullName"]').value = data.fullName || "";
+                        form.querySelector('[name="UserForm.Username"]').value = data.username || "";
+                        form.querySelector('[name="UserForm.Role"]').value = data.role || "customer";
+                        form.querySelector('[name="UserForm.Password"]').value = "";
+                        form.querySelector('[name="UserForm.IsActive"]').checked = data.isActive === "true";
+                    }
+                }
+            };
+
+            const updateSubmitLabel = (form, isEditing) => {
+                const submitButton = form.querySelector(".js-admin-submit-label");
+                if (!submitButton) return;
+
+                const label = isEditing ? form.dataset.updateLabel : form.dataset.createLabel;
+                const labelNode = submitButton.querySelector("span");
+                if (labelNode) {
+                    labelNode.textContent = label;
+                } else {
+                    submitButton.textContent = label;
+                }
+            };
+
+            const setFormMode = (formId, mode, data = {}) => {
+                const form = document.getElementById(formId);
+                const config = form ? formConfigs[formId] : null;
+                if (!form || !config) return;
+
+                if (mode === "edit") {
+                    config.setEditState(form, data);
+                } else {
+                    config.setCreateState(form);
+                }
+
+                updateSubmitLabel(form, mode === "edit");
+                form.scrollIntoView({ behavior: "smooth", block: "center" });
+            };
+
+            document.querySelectorAll(".js-admin-edit").forEach((button) => {
+                button.addEventListener("click", () => {
+                    const { targetForm, ...data } = button.dataset;
+                    setFormMode(targetForm, "edit", data);
+                });
+            });
+
+            document.querySelectorAll(".js-admin-reset").forEach((button) => {
+                button.addEventListener("click", () => {
+                    setFormMode(button.dataset.targetForm, "create");
+                });
+            });
+
+            document.querySelectorAll(".js-admin-toggle-form").forEach((form) => {
+                form.addEventListener("submit", async (event) => {
+                    event.preventDefault();
+
+                    const toggleButton = form.querySelector(".js-admin-toggle-button");
+                    const hiddenInput = form.querySelector('input[name="isActive"]');
+                    const badge = form.closest(".list-group-item, tr")?.querySelector(".js-admin-status-badge");
+
+                    try {
+                        const response = await fetch(form.action, {
+                            method: "POST",
+                            body: new FormData(form),
+                            headers: {
+                                "X-Requested-With": "XMLHttpRequest"
+                            }
+                        });
+
+                        if (!response.ok) {
+                            throw new Error("Toggle failed");
+                        }
+
+                        const nowActive = hiddenInput?.value === "True" || hiddenInput?.value === "true";
+                        if (hiddenInput) {
+                            hiddenInput.value = (!nowActive).toString();
+                        }
+
+                        if (toggleButton) {
+                            toggleButton.textContent = nowActive
+                                ? (toggleButton.dataset.activeText || "Inactive")
+                                : (toggleButton.dataset.inactiveText || "Activate");
+                        }
+
+                        if (badge) {
+                            badge.textContent = nowActive ? "Active" : "Inactive";
+                            badge.classList.toggle("text-bg-success", nowActive);
+                            badge.classList.toggle("text-bg-secondary", !nowActive);
+                        }
+                    } catch {
+                        window.location.reload();
+                    }
+                });
+            });
+        })();
+    </script>
 }

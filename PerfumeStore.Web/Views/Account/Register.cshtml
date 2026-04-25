@@ -1,0 +1,69 @@
+@model PerfumeStore.Web.Models.ViewModels.RegisterViewModel
+
+@{
+    ViewData["Title"] = "Create Account";
+}
+
+<section class="customer-auth-shell">
+    <div class="container py-5">
+        <div class="row g-5 align-items-center">
+            <div class="col-lg-5">
+                <p class="eyebrow mb-3">Create Account</p>
+                <h1 class="mb-3">Start your customer account in one step.</h1>
+                <p class="text-muted mb-4">We’ll use your email for login, saved wishlist items, and order history after checkout.</p>
+            </div>
+
+            <div class="col-lg-7">
+                <div class="card customer-auth-card border-0">
+                    <div class="card-body p-4 p-lg-5">
+                        <div class="d-flex justify-content-between align-items-start gap-3 mb-4">
+                            <div>
+                                <h2 class="h3 mb-1">Create your profile</h2>
+                                <p class="text-muted mb-0">This account is for customer features only.</p>
+                            </div>
+                            <a class="btn btn-outline-dark" asp-action="Login" asp-route-type="customer">Sign in</a>
+                        </div>
+
+                        <form asp-action="Register" method="post">
+                            @Html.AntiForgeryToken()
+                            <div asp-validation-summary="ModelOnly" class="alert alert-danger"></div>
+
+                            <div class="mb-3">
+                                <label asp-for="FullName" class="form-label"></label>
+                                <input asp-for="FullName" class="form-control form-control-lg" placeholder="Ayesha Malik" />
+                                <span asp-validation-for="FullName" class="text-danger small"></span>
+                            </div>
+
+                            <div class="mb-3">
+                                <label asp-for="Email" class="form-label"></label>
+                                <input asp-for="Email" class="form-control form-control-lg" placeholder="you@example.com" />
+                                <span asp-validation-for="Email" class="text-danger small"></span>
+                            </div>
+
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label asp-for="Password" class="form-label"></label>
+                                    <input asp-for="Password" type="password" class="form-control form-control-lg" />
+                                    <span asp-validation-for="Password" class="text-danger small"></span>
+                                </div>
+                                <div class="col-md-6">
+                                    <label asp-for="ConfirmPassword" class="form-label"></label>
+                                    <input asp-for="ConfirmPassword" type="password" class="form-control form-control-lg" />
+                                    <span asp-validation-for="ConfirmPassword" class="text-danger small"></span>
+                                </div>
+                            </div>
+
+                            <button type="submit" class="btn btn-dark btn-lg w-100 mt-4">
+                                <i class="bi bi-person-plus me-2"></i>Create customer account
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

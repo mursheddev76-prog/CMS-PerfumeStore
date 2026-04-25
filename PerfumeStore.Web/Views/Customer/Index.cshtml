@@ -1,0 +1,111 @@
+@model PerfumeStore.Web.Models.ViewModels.CustomerDashboardViewModel
+
+@{
+    ViewData["Title"] = "My Account";
+    var returnUrl = $"{Context.Request.Path}{Context.Request.QueryString}";
+    var customerMessage = TempData["CustomerMessage"]?.ToString();
+}
+
+<section class="container py-5">
+    <div class="section-heading mb-4">
+        <p class="eyebrow">Customer Dashboard</p>
+        <h1>Welcome, @Model.FullName</h1>
+        <p class="text-muted">Signed in as @Model.Email</p>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(customerMessage))
+    {
+        <div class="alert alert-info">@customerMessage</div>
+    }
+
+    <div class="row g-4">
+        <div class="col-lg-7">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-header bg-white">
+                    <h2 class="h4 mb-1">Recent orders</h2>
+                    <small class="text-muted">Your order history is linked to your account email.</small>
+                </div>
+                <div class="card-body">
+                    @if (!Model.Orders.Any())
+                    {
+                        <div class="empty-state">
+                            <p class="mb-3">No orders yet.</p>
+                            <a class="btn btn-dark" href="/catalog">Start shopping</a>
+                        </div>
+                    }
+                    else
+                    {
+                        foreach (var order in Model.Orders)
+                        {
+                            <article class="order-row">
+                                <div class="d-flex justify-content-between gap-3 flex-wrap">
+                                    <div>
+                                        <strong class="d-block">@order.OrderNumber</strong>
+                                        <span class="badge text-bg-dark mt-2">@order.Status</span>
+                                        <span class="badge text-bg-secondary mt-2">@order.PaymentStatus</span>
+                                    </div>
+                                    <div class="text-lg-end">
+                                        <strong class="d-block">@order.Total.ToString("C")</strong>
+                                        <small class="text-muted">@order.CreatedAt.ToLocalTime().ToString("dd MMM yyyy")</small>
+                                    </div>
+                                </div>
+                                <div class="order-meta mt-3">
+                                    <span><i class="bi bi-bag me-1"></i>@order.ItemCount item(s)</span>
+                                    <span><i class="bi bi-credit-card me-1"></i>@order.PaymentMethod</span>
+                                    <span><i class="bi bi-truck me-1"></i>@order.DeliveryOption</span>
+                                    <span><i class="bi bi-clock me-1"></i>@order.EstimatedDays day estimate</span>
+                                    @if (!string.IsNullOrWhiteSpace(order.PaymentReference))
+                                    {
+                                        <span><i class="bi bi-upc-scan me-1"></i>@order.PaymentReference</span>
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(order.PaymentReceiptUrl))
+                                    {
+                                        <a href="@order.PaymentReceiptUrl" target="_blank" rel="noopener noreferrer">View receipt</a>
+                                    }
+                                </div>
+                            </article>
+                        }
+                    }
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-5">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-header bg-white">
+                    <h2 class="h4 mb-1">Wishlist</h2>
+                    <small class="text-muted">Saved products from across the storefront.</small>
+                </div>
+                <div class="card-body">
+                    @if (!Model.Wishlist.Any())
+                    {
+                        <div class="empty-state">
+                            <p class="mb-3">No wishlist items yet.</p>
+                            <a class="btn btn-outline-dark" href="/catalog">Browse fragrances</a>
+                        </div>
+                    }
+                    else
+                    {
+                        foreach (var product in Model.Wishlist)
+                        {
+                            <div class="wishlist-row">
+                                <img src="@product.ImageUrl" alt="@product.Name" />
+                                <div class="flex-grow-1">
+                                    <a class="fw-semibold text-dark" href="/catalog/@product.Id">@product.Name</a>
+                                    <div class="small text-muted">@product.Category</div>
+                                    <div class="fw-semibold mt-1">@((product.DiscountPrice ?? product.Price).ToString("C"))</div>
+                                </div>
+                                <form asp-action="RemoveFromWishlist" method="post" class="text-end">
+                                    @Html.AntiForgeryToken()
+                                    <input type="hidden" name="productId" value="@product.Id" />
+                                    <input type="hidden" name="returnUrl" value="@returnUrl" />
+                                    <button class="btn btn-sm btn-outline-secondary" type="submit">Remove</button>
+                                </form>
+                            </div>
+                        }
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</section>

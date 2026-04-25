@@ -17,6 +17,8 @@ public class CheckoutService
         IReadOnlyCollection<CheckoutLine>? cartLines,
         int? selectedPaymentMethodId,
         int? selectedDeliveryOptionId,
+        string? customerName,
+        string? customerEmail,
         CancellationToken cancellationToken)
     {
         var productsTask = _repository.GetAllProductsAsync(cancellationToken);
@@ -70,6 +72,8 @@ public class CheckoutService
             EstimatedTotal = subtotal + deliveryFee + processingFee,
             Request = new CheckoutRequest
             {
+                CustomerName = customerName ?? string.Empty,
+                CustomerEmail = customerEmail ?? string.Empty,
                 PaymentMethodId = paymentMethod?.Id ?? 0,
                 DeliveryOptionId = deliveryOption?.Id ?? 0,
                 Items = cartItems.Select(item => new CheckoutLine
@@ -81,7 +85,7 @@ public class CheckoutService
         };
     }
 
-    public async Task<CheckoutResultViewModel> PlaceOrderAsync(CheckoutRequest request, CancellationToken cancellationToken)
+    public async Task<CheckoutResultViewModel> PlaceOrderAsync(CheckoutRequest request, string? paymentReceiptUrl, CancellationToken cancellationToken)
     {
         var products = await _repository.GetAllProductsAsync(cancellationToken);
         var paymentOption = (await _repository.GetPaymentMethodsAsync(cancellationToken))
@@ -98,9 +102,20 @@ public class CheckoutService
             };
         }
 
+        if (paymentOption.PaymentType == "manual" && paymentOption.RequiresReceipt && string.IsNullOrWhiteSpace(paymentReceiptUrl))
+        {
+            return new CheckoutResultViewModel
+            {
+                IsSuccess = false,
+                Message = "A payment receipt is required for manual bank transfer orders."
+            };
+        }
+
         var cartLines = request.Items
             .Select(line => (line, product: products.FirstOrDefault(p => p.Id == line.ProductId)))
             .Where(tuple => tuple.product is not null)
+            .Where(tuple => tuple.line.Quantity > 0)
+            .Where(tuple => tuple.product!.StockQuantity >= tuple.line.Quantity)
             .Select(tuple =>
             {
                 var price = tuple.product!.DiscountPrice ?? tuple.product.Price;
@@ -117,6 +132,15 @@ public class CheckoutService
         }
 
         var subtotal = cartLines.Sum(i => i.price * i.Quantity);
+        var initialOrderStatus = paymentOption.PaymentType == "manual" || paymentOption.PaymentType == "partner_bank"
+            ? "Payment Review"
+            : "Processing";
+        var initialPaymentStatus = paymentOption.PaymentType == "manual"
+            ? "Receipt Submitted"
+            : paymentOption.PaymentType == "partner_bank"
+                ? "Pending Confirmation"
+                : "Paid";
+
         var payload = new CheckoutPayload
         {
             CustomerName = request.CustomerName,
@@ -124,6 +148,10 @@ public class CheckoutService
             ShippingAddress = request.ShippingAddress,
             DeliveryOptionId = request.DeliveryOptionId,
             PaymentMethodId = request.PaymentMethodId,
+            Status = initialOrderStatus,
+            PaymentStatus = initialPaymentStatus,
+            PaymentReceiptUrl = paymentReceiptUrl,
+            PaymentReference = request.PaymentReference,
             Subtotal = subtotal,
             DeliveryFee = deliveryOption.Fee,
             ProcessingFee = paymentOption.ProcessingFee,
@@ -137,7 +165,9 @@ public class CheckoutService
             IsSuccess = success,
             OrderNumber = orderNumber,
             Message = success
-                ? "Thank you! Your order is confirmed."
+                ? paymentOption.PaymentType == "manual"
+                    ? "Order placed. Your receipt was submitted for payment review."
+                    : "Thank you! Your order is confirmed."
                 : "Something went wrong while creating the order."
         };
     }

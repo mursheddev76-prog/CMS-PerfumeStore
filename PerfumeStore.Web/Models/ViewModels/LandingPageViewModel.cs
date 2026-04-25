@@ -30,6 +30,9 @@ public class ProductCardViewModel
     public decimal Price { get; init; }
     public decimal? DiscountPrice { get; init; }
     public bool IsNewArrival { get; init; }
+    public bool IsWishlisted { get; init; }
+    public int StockQuantity { get; init; }
+    public bool IsOutOfStock => StockQuantity <= 0;
 }
 
 public class DeliveryBadgeViewModel
@@ -39,3 +42,8 @@ public class DeliveryBadgeViewModel
     public string Icon { get; init; } = "bi-truck";
 }
 
+public class ProductDetailsViewModel
+{
+    public ProductCardViewModel Product { get; init; } = new();
+    public IReadOnlyCollection<ProductCardViewModel> RelatedProducts { get; init; } = Array.Empty<ProductCardViewModel>();
+}

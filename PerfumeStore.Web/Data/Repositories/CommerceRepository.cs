@@ -3,6 +3,7 @@ using Dapper;
 using Microsoft.Extensions.Options;
 using Npgsql;
 using PerfumeStore.Web.Models.Domain;
+using PerfumeStore.Web.Models.ViewModels;
 
 namespace PerfumeStore.Web.Data.Repositories;
 
@@ -11,20 +12,42 @@ public interface ICommerceRepository
     Task<IReadOnlyList<Product>> GetFeaturedProductsAsync(CancellationToken cancellationToken);
     Task<IReadOnlyList<Product>> GetTrendingProductsAsync(CancellationToken cancellationToken);
     Task<IReadOnlyList<Product>> GetAllProductsAsync(CancellationToken cancellationToken);
+    Task<Product?> GetProductByIdAsync(int id, CancellationToken cancellationToken);
     Task<IReadOnlyList<Category>> GetCategoriesAsync(CancellationToken cancellationToken);
     Task<IReadOnlyList<PaymentMethod>> GetPaymentMethodsAsync(CancellationToken cancellationToken);
     Task<IReadOnlyList<DeliveryOption>> GetDeliveryOptionsAsync(CancellationToken cancellationToken);
     Task<HeroContent> GetHeroContentAsync(CancellationToken cancellationToken);
     Task<AdminDashboardStats> GetDashboardStatsAsync(CancellationToken cancellationToken);
+    Task<IReadOnlyList<AdminOrderSummary>> GetRecentOrdersAsync(CancellationToken cancellationToken);
+    Task<IReadOnlyList<AdminCustomerSummary>> GetTopCustomersAsync(CancellationToken cancellationToken);
+    Task<IReadOnlyList<AdminOrderSummary>> SearchOrdersAsync(AdminOrderFiltersInput filters, CancellationToken cancellationToken);
+    Task<IReadOnlyList<AppUserSummary>> GetUsersAsync(CancellationToken cancellationToken);
     Task UpsertProductAsync(Product product, CancellationToken cancellationToken);
     Task UpsertCategoryAsync(Category category, CancellationToken cancellationToken);
     Task UpsertPaymentMethodAsync(PaymentMethod method, CancellationToken cancellationToken);
     Task UpsertDeliveryOptionAsync(DeliveryOption option, CancellationToken cancellationToken);
     Task UpsertHeroContentAsync(HeroContent hero, CancellationToken cancellationToken);
+    Task UpdateOrderReviewAsync(string orderNumber, string status, string paymentStatus, string? notes, CancellationToken cancellationToken);
+    Task SetCategoryActiveAsync(int id, bool isActive, CancellationToken cancellationToken);
+    Task DeleteCategoryAsync(int id, CancellationToken cancellationToken);
+    Task DeleteProductAsync(int id, CancellationToken cancellationToken);
+    Task SetPaymentMethodActiveAsync(int id, bool isActive, CancellationToken cancellationToken);
+    Task DeletePaymentMethodAsync(int id, CancellationToken cancellationToken);
+    Task SetDeliveryOptionActiveAsync(int id, bool isActive, CancellationToken cancellationToken);
+    Task DeleteDeliveryOptionAsync(int id, CancellationToken cancellationToken);
     Task<(bool Success, string? OrderNumber)> CreateOrderAsync(
         CheckoutPayload payload,
         CancellationToken cancellationToken);
     Task<User?> GetUserByUsernameAsync(string username, CancellationToken cancellationToken);
+    Task<int> CreateUserAsync(string fullName, string username, string passwordHash, CancellationToken cancellationToken);
+    Task UpsertUserAsync(UserManagementInput input, CancellationToken cancellationToken);
+    Task SetUserActiveAsync(int id, bool isActive, CancellationToken cancellationToken);
+    Task DeleteUserAsync(int id, CancellationToken cancellationToken);
+    Task<IReadOnlyList<CustomerOrderSummary>> GetCustomerOrdersByEmailAsync(string email, CancellationToken cancellationToken);
+    Task<IReadOnlyList<int>> GetWishlistProductIdsAsync(string username, CancellationToken cancellationToken);
+    Task<IReadOnlyList<Product>> GetWishlistProductsAsync(string username, CancellationToken cancellationToken);
+    Task AddWishlistItemAsync(string username, int productId, CancellationToken cancellationToken);
+    Task RemoveWishlistItemAsync(string username, int productId, CancellationToken cancellationToken);
 }
 
 public sealed class CommerceRepository : ICommerceRepository
@@ -46,6 +69,35 @@ public sealed class CommerceRepository : ICommerceRepository
 
     public async Task<IReadOnlyList<Product>> GetAllProductsAsync(CancellationToken cancellationToken) =>
         (await QueryProductsAsync(StoredProcedures.ProductsGetAll, cancellationToken)).ToList();
+
+    public async Task<Product?> GetProductByIdAsync(int id, CancellationToken cancellationToken)
+    {
+        using var connection = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken);
+        var command = new CommandDefinition(
+            """
+            select
+                p.id as Id,
+                p.name as Name,
+                p.description as Description,
+                p.price as Price,
+                p.discount_price as DiscountPrice,
+                p.image_url as ImageUrl,
+                p.is_featured as IsFeatured,
+                p.is_trending as IsTrending,
+                p.category_id as CategoryId,
+                c.name as CategoryName,
+                p.stock_quantity as StockQuantity
+            from products p
+            join categories c on c.id = p.category_id
+            where p.id = @Id
+            """,
+            new { Id = id },
+            commandType: CommandType.Text,
+            cancellationToken: cancellationToken,
+            commandTimeout: _commandTimeout);
+
+        return await connection.QuerySingleOrDefaultAsync<Product>(command);
+    }
 
     public async Task<IReadOnlyList<Category>> GetCategoriesAsync(CancellationToken cancellationToken)
         => await QueryFunctionAsync<Category>(StoredProcedures.CategoriesGetAll, cancellationToken);
@@ -75,6 +127,96 @@ public sealed class CommerceRepository : ICommerceRepository
         return stats ?? new AdminDashboardStats(0, 0, 0, 0, 0);
     }
 
+    public async Task<IReadOnlyList<AdminOrderSummary>> GetRecentOrdersAsync(CancellationToken cancellationToken)
+        => await QueryFunctionAsync<AdminOrderSummary>(StoredProcedures.AdminOrdersGetRecent, cancellationToken);
+
+    public async Task<IReadOnlyList<AdminCustomerSummary>> GetTopCustomersAsync(CancellationToken cancellationToken)
+        => await QueryFunctionAsync<AdminCustomerSummary>(StoredProcedures.AdminCustomersGetTop, cancellationToken);
+
+    public async Task<IReadOnlyList<AdminOrderSummary>> SearchOrdersAsync(AdminOrderFiltersInput filters, CancellationToken cancellationToken)
+    {
+        using var connection = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken);
+        var command = new CommandDefinition(
+            """
+            select
+                o.order_number as OrderNumber,
+                o.customer_name as CustomerName,
+                o.customer_email as CustomerEmail,
+                o.shipping_address as ShippingAddress,
+                o.status as Status,
+                o.payment_status as PaymentStatus,
+                pm.name as PaymentMethod,
+                pm.id as PaymentMethodId,
+                pm.payment_type as PaymentType,
+                d.name as DeliveryOption,
+                coalesce(sum(oi.quantity), 0)::int as ItemCount,
+                o.total as Total,
+                o.created_at as CreatedAt,
+                o.payment_receipt_url as PaymentReceiptUrl,
+                o.payment_reference as PaymentReference,
+                o.payment_review_notes as PaymentReviewNotes
+            from orders o
+            join payment_methods pm on pm.id = o.payment_method_id
+            join delivery_options d on d.id = o.delivery_option_id
+            left join order_items oi on oi.order_id = o.id
+            where (
+                @Query is null
+                or o.order_number ilike @Pattern
+                or o.customer_name ilike @Pattern
+                or o.customer_email ilike @Pattern
+            )
+            and (@Status is null or o.status = @Status)
+            and (@PaymentStatus is null or o.payment_status = @PaymentStatus)
+            and (@PaymentMethodId is null or o.payment_method_id = @PaymentMethodId)
+            and (@DateFrom is null or o.created_at::date >= @DateFrom)
+            and (@DateTo is null or o.created_at::date <= @DateTo)
+            group by o.order_number, o.customer_name, o.customer_email, o.shipping_address, o.status, o.payment_status, pm.name, pm.id, pm.payment_type, d.name, o.total, o.created_at, o.payment_receipt_url, o.payment_reference, o.payment_review_notes
+            order by o.created_at desc
+            limit 30;
+            """,
+            new
+            {
+                Query = string.IsNullOrWhiteSpace(filters.Query) ? null : filters.Query.Trim(),
+                Pattern = $"%{filters.Query?.Trim()}%",
+                filters.Status,
+                filters.PaymentStatus,
+                filters.PaymentMethodId,
+                DateFrom = filters.DateFrom?.Date,
+                DateTo = filters.DateTo?.Date
+            },
+            commandType: CommandType.Text,
+            cancellationToken: cancellationToken,
+            commandTimeout: _commandTimeout);
+
+        var results = await connection.QueryAsync<AdminOrderSummary>(command);
+        return results.ToList();
+    }
+
+    public async Task<IReadOnlyList<AppUserSummary>> GetUsersAsync(CancellationToken cancellationToken)
+    {
+        using var connection = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken);
+        var command = new CommandDefinition(
+            """
+            select
+                id as Id,
+                coalesce(nullif(full_name, ''), username) as FullName,
+                username as Username,
+                role as Role,
+                is_active as IsActive,
+                created_at as CreatedAt
+            from app_users
+            order by
+                case when role = 'customer' then 1 else 0 end,
+                created_at desc;
+            """,
+            commandType: CommandType.Text,
+            cancellationToken: cancellationToken,
+            commandTimeout: _commandTimeout);
+
+        var users = await connection.QueryAsync<AppUserSummary>(command);
+        return users.ToList();
+    }
+
     public async Task UpsertProductAsync(Product product, CancellationToken cancellationToken)
     {
         var parameters = new DynamicParameters();
@@ -98,9 +240,17 @@ public sealed class CommerceRepository : ICommerceRepository
         parameters.Add("p_id", method.Id);
         parameters.Add("p_name", method.Name);
         parameters.Add("p_provider", method.Provider);
+        parameters.Add("p_payment_type", method.PaymentType);
+        parameters.Add("p_partner_name", method.PartnerName);
         parameters.Add("p_processing_fee", method.ProcessingFee);
         parameters.Add("p_supports_installments", method.SupportsInstallments);
         parameters.Add("p_is_active", method.IsActive);
+        parameters.Add("p_account_title", method.AccountTitle);
+        parameters.Add("p_account_number", method.AccountNumber);
+        parameters.Add("p_bank_name", method.BankName);
+        parameters.Add("p_iban", method.Iban);
+        parameters.Add("p_instructions", method.Instructions);
+        parameters.Add("p_requires_receipt", method.RequiresReceipt);
 
         await ExecuteAsync(StoredProcedures.PaymentMethodUpsert, parameters, cancellationToken);
     }
@@ -130,6 +280,17 @@ public sealed class CommerceRepository : ICommerceRepository
         parameters.Add("p_secondary_cta_link", hero.SecondaryCtaLink);
 
         await ExecuteAsync(StoredProcedures.HeroContentUpsert, parameters, cancellationToken);
+    }
+
+    public async Task UpdateOrderReviewAsync(string orderNumber, string status, string paymentStatus, string? notes, CancellationToken cancellationToken)
+    {
+        var parameters = new DynamicParameters();
+        parameters.Add("p_order_number", orderNumber);
+        parameters.Add("p_status", status);
+        parameters.Add("p_payment_status", paymentStatus);
+        parameters.Add("p_payment_review_notes", notes);
+
+        await ExecuteAsync(StoredProcedures.OrderReviewUpdate, parameters, cancellationToken);
     }
 
     public async Task UpsertCategoryAsync(Category category, CancellationToken cancellationToken)
@@ -169,6 +330,72 @@ public sealed class CommerceRepository : ICommerceRepository
             commandTimeout: _commandTimeout));
     }
 
+    public Task SetCategoryActiveAsync(int id, bool isActive, CancellationToken cancellationToken) =>
+        ExecuteSqlAsync(
+            """
+            update categories
+            set is_active = @IsActive
+            where id = @Id;
+            """,
+            new { Id = id, IsActive = isActive },
+            cancellationToken);
+
+    public Task DeleteCategoryAsync(int id, CancellationToken cancellationToken) =>
+        ExecuteSqlAsync(
+            """
+            delete from categories
+            where id = @Id;
+            """,
+            new { Id = id },
+            cancellationToken);
+
+    public Task DeleteProductAsync(int id, CancellationToken cancellationToken) =>
+        ExecuteSqlAsync(
+            """
+            delete from products
+            where id = @Id;
+            """,
+            new { Id = id },
+            cancellationToken);
+
+    public Task SetPaymentMethodActiveAsync(int id, bool isActive, CancellationToken cancellationToken) =>
+        ExecuteSqlAsync(
+            """
+            update payment_methods
+            set is_active = @IsActive
+            where id = @Id;
+            """,
+            new { Id = id, IsActive = isActive },
+            cancellationToken);
+
+    public Task DeletePaymentMethodAsync(int id, CancellationToken cancellationToken) =>
+        ExecuteSqlAsync(
+            """
+            delete from payment_methods
+            where id = @Id;
+            """,
+            new { Id = id },
+            cancellationToken);
+
+    public Task SetDeliveryOptionActiveAsync(int id, bool isActive, CancellationToken cancellationToken) =>
+        ExecuteSqlAsync(
+            """
+            update delivery_options
+            set is_active = @IsActive
+            where id = @Id;
+            """,
+            new { Id = id, IsActive = isActive },
+            cancellationToken);
+
+    public Task DeleteDeliveryOptionAsync(int id, CancellationToken cancellationToken) =>
+        ExecuteSqlAsync(
+            """
+            delete from delivery_options
+            where id = @Id;
+            """,
+            new { Id = id },
+            cancellationToken);
+
     public async Task<(bool Success, string? OrderNumber)> CreateOrderAsync(
         CheckoutPayload payload,
         CancellationToken cancellationToken)
@@ -182,6 +409,10 @@ public sealed class CommerceRepository : ICommerceRepository
                 @p_shipping_address,
                 @p_payment_method_id,
                 @p_delivery_option_id,
+                @p_status,
+                @p_payment_status,
+                @p_payment_receipt_url,
+                @p_payment_reference,
                 @p_subtotal,
                 @p_delivery_fee,
                 @p_processing_fee,
@@ -201,6 +432,10 @@ public sealed class CommerceRepository : ICommerceRepository
         command.Parameters.AddWithValue("p_shipping_address", payload.ShippingAddress);
         command.Parameters.AddWithValue("p_payment_method_id", payload.PaymentMethodId);
         command.Parameters.AddWithValue("p_delivery_option_id", payload.DeliveryOptionId);
+        command.Parameters.AddWithValue("p_status", payload.Status);
+        command.Parameters.AddWithValue("p_payment_status", payload.PaymentStatus);
+        command.Parameters.AddWithValue("p_payment_receipt_url", (object?)payload.PaymentReceiptUrl ?? DBNull.Value);
+        command.Parameters.AddWithValue("p_payment_reference", (object?)payload.PaymentReference ?? DBNull.Value);
         command.Parameters.AddWithValue("p_subtotal", payload.Subtotal);
         command.Parameters.AddWithValue("p_delivery_fee", payload.DeliveryFee);
         command.Parameters.AddWithValue("p_processing_fee", payload.ProcessingFee);
@@ -226,13 +461,216 @@ public sealed class CommerceRepository : ICommerceRepository
         using var connection = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken);
         var command = new CommandDefinition(
             $"select * from {StoredProcedures.UserGetByUsername}(@p_username)",
-            parameters,
+            new { p_username = NormalizeUsername(username) },
             commandType: CommandType.Text,
             cancellationToken: cancellationToken,
             commandTimeout: _commandTimeout);
         
         return await connection.QuerySingleOrDefaultAsync<User>(command);
     }
+
+    public async Task<int> CreateUserAsync(string fullName, string username, string passwordHash, CancellationToken cancellationToken)
+    {
+        using var connection = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken);
+        var command = new CommandDefinition(
+            """
+            insert into app_users(full_name, username, password_hash, role)
+            values (@FullName, @Username, @PasswordHash, 'customer')
+            returning id;
+            """,
+            new
+            {
+                FullName = fullName,
+                Username = NormalizeUsername(username),
+                PasswordHash = passwordHash
+            },
+            commandType: CommandType.Text,
+            cancellationToken: cancellationToken,
+            commandTimeout: _commandTimeout);
+
+        return await connection.ExecuteScalarAsync<int>(command);
+    }
+
+    public async Task UpsertUserAsync(UserManagementInput input, CancellationToken cancellationToken)
+    {
+        using var connection = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken);
+
+        if (input.Id == 0)
+        {
+            var command = new CommandDefinition(
+                """
+                insert into app_users(full_name, username, password_hash, role, is_active)
+                values (@FullName, @Username, @PasswordHash, @Role, @IsActive);
+                """,
+                new
+                {
+                    FullName = input.FullName.Trim(),
+                    Username = NormalizeUsername(input.Username),
+                    PasswordHash = BCrypt.Net.BCrypt.HashPassword(input.Password ?? "password123"),
+                    input.Role,
+                    input.IsActive
+                },
+                commandType: CommandType.Text,
+                cancellationToken: cancellationToken,
+                commandTimeout: _commandTimeout);
+
+            await connection.ExecuteAsync(command);
+            return;
+        }
+
+        var sql = string.IsNullOrWhiteSpace(input.Password)
+            ? """
+              update app_users
+              set full_name = @FullName,
+                  username = @Username,
+                  role = @Role,
+                  is_active = @IsActive
+              where id = @Id;
+              """
+            : """
+              update app_users
+              set full_name = @FullName,
+                  username = @Username,
+                  password_hash = @PasswordHash,
+                  role = @Role,
+                  is_active = @IsActive
+              where id = @Id;
+              """;
+
+        var commandUpdate = new CommandDefinition(
+            sql,
+            new
+            {
+                input.Id,
+                FullName = input.FullName.Trim(),
+                Username = NormalizeUsername(input.Username),
+                PasswordHash = string.IsNullOrWhiteSpace(input.Password) ? null : BCrypt.Net.BCrypt.HashPassword(input.Password),
+                input.Role,
+                input.IsActive
+            },
+            commandType: CommandType.Text,
+            cancellationToken: cancellationToken,
+            commandTimeout: _commandTimeout);
+
+        await connection.ExecuteAsync(commandUpdate);
+    }
+
+    public Task SetUserActiveAsync(int id, bool isActive, CancellationToken cancellationToken) =>
+        ExecuteSqlAsync(
+            """
+            update app_users
+            set is_active = @IsActive
+            where id = @Id;
+            """,
+            new { Id = id, IsActive = isActive },
+            cancellationToken);
+
+    public Task DeleteUserAsync(int id, CancellationToken cancellationToken) =>
+        ExecuteSqlAsync(
+            """
+            delete from app_users
+            where id = @Id;
+            """,
+            new { Id = id },
+            cancellationToken);
+
+    public async Task<IReadOnlyList<CustomerOrderSummary>> GetCustomerOrdersByEmailAsync(string email, CancellationToken cancellationToken)
+    {
+        using var connection = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken);
+        var command = new CommandDefinition(
+            $"select * from {StoredProcedures.CustomerOrdersGetByEmail}(@p_customer_email)",
+            new { p_customer_email = email },
+            commandType: CommandType.Text,
+            cancellationToken: cancellationToken,
+            commandTimeout: _commandTimeout);
+
+        var results = await connection.QueryAsync<CustomerOrderSummary>(command);
+        return results.ToList();
+    }
+
+    public async Task<IReadOnlyList<int>> GetWishlistProductIdsAsync(string username, CancellationToken cancellationToken)
+    {
+        using var connection = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken);
+        var command = new CommandDefinition(
+            """
+            select cw.product_id
+            from customer_wishlist cw
+            join app_users u on u.id = cw.user_id
+            where lower(u.username) = lower(@Username)
+            """,
+            new { Username = NormalizeUsername(username) },
+            commandType: CommandType.Text,
+            cancellationToken: cancellationToken,
+            commandTimeout: _commandTimeout);
+
+        var ids = await connection.QueryAsync<int>(command);
+        return ids.ToList();
+    }
+
+    public async Task<IReadOnlyList<Product>> GetWishlistProductsAsync(string username, CancellationToken cancellationToken)
+    {
+        using var connection = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken);
+        var command = new CommandDefinition(
+            $"select * from {StoredProcedures.WishlistGetByUsername}(@p_username)",
+            new { p_username = NormalizeUsername(username) },
+            commandType: CommandType.Text,
+            cancellationToken: cancellationToken,
+            commandTimeout: _commandTimeout);
+
+        var products = await connection.QueryAsync<Product>(command);
+        return products.ToList();
+    }
+
+    public async Task AddWishlistItemAsync(string username, int productId, CancellationToken cancellationToken)
+    {
+        using var connection = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken);
+        var command = new CommandDefinition(
+            """
+            insert into customer_wishlist(user_id, product_id)
+            select id, @ProductId
+            from app_users
+            where lower(username) = lower(@Username)
+            on conflict do nothing;
+            """,
+            new
+            {
+                Username = NormalizeUsername(username),
+                ProductId = productId
+            },
+            commandType: CommandType.Text,
+            cancellationToken: cancellationToken,
+            commandTimeout: _commandTimeout);
+
+        await connection.ExecuteAsync(command);
+    }
+
+    public async Task RemoveWishlistItemAsync(string username, int productId, CancellationToken cancellationToken)
+    {
+        using var connection = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken);
+        var command = new CommandDefinition(
+            """
+            delete from customer_wishlist
+            where product_id = @ProductId
+              and user_id = (
+                  select id
+                  from app_users
+                  where lower(username) = lower(@Username)
+              );
+            """,
+            new
+            {
+                Username = NormalizeUsername(username),
+                ProductId = productId
+            },
+            commandType: CommandType.Text,
+            cancellationToken: cancellationToken,
+            commandTimeout: _commandTimeout);
+
+        await connection.ExecuteAsync(command);
+    }
+
+    private static string NormalizeUsername(string username) =>
+        username.Trim().ToLowerInvariant();
 
     private async Task<IEnumerable<Product>> QueryProductsAsync(string functionName, CancellationToken cancellationToken)
         => await QueryFunctionAsync<Product>(functionName, cancellationToken);
@@ -270,6 +708,18 @@ public sealed class CommerceRepository : ICommerceRepository
                 cancellationToken: cancellationToken,
                 commandTimeout: _commandTimeout));
     }
+
+    private async Task ExecuteSqlAsync(string sql, object? parameters, CancellationToken cancellationToken)
+    {
+        using var connection = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken);
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                sql,
+                parameters,
+                commandType: CommandType.Text,
+                cancellationToken: cancellationToken,
+                commandTimeout: _commandTimeout));
+    }
 }
 
 public sealed class CheckoutPayload
@@ -279,6 +729,10 @@ public sealed class CheckoutPayload
     public required string ShippingAddress { get; init; }
     public required int PaymentMethodId { get; init; }
     public required int DeliveryOptionId { get; init; }
+    public required string Status { get; init; }
+    public required string PaymentStatus { get; init; }
+    public string? PaymentReceiptUrl { get; init; }
+    public string? PaymentReference { get; init; }
     public required decimal Subtotal { get; init; }
     public required decimal DeliveryFee { get; init; }
     public required decimal ProcessingFee { get; init; }

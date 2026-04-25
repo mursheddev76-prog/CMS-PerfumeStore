@@ -55,10 +55,12 @@
             {
                 <div class="col-lg-4 col-md-6">
                     <article class="product-card">
-                        <div class="product-image" style="background-image:url('@product.ImageUrl')"></div>
+                        <a class="product-image-link" href="/catalog/@product.Id">
+                            <div class="product-image" style="background-image:url('@product.ImageUrl')"></div>
+                        </a>
                         <div class="product-body">
                             <p class="text-muted">@product.Category</p>
-                            <h3>@product.Name</h3>
+                            <h3><a class="text-dark" href="/catalog/@product.Id">@product.Name</a></h3>
                             <p class="small text-muted">@product.Description</p>
                             <div class="pricing my-3">
                                 @if (product.DiscountPrice.HasValue)
@@ -73,16 +75,28 @@
                             </div>
                             <div class="d-flex gap-2">
                                 <form asp-controller="Checkout" asp-action="AddToCart" method="post" class="flex-grow-1">
+                                    @Html.AntiForgeryToken()
                                     <input type="hidden" name="productId" value="@product.Id" />
                                     <input type="hidden" name="quantity" value="1" />
                                     <input type="hidden" name="returnUrl" value="@returnUrl" />
-                                    <button class="btn btn-dark w-100" type="submit">
+                                    <button class="btn btn-dark w-100" type="submit" disabled="@product.IsOutOfStock">
                                         <i class="bi bi-bag-check me-2"></i>Add to Cart
                                     </button>
                                 </form>
-                                <button class="btn btn-outline-secondary" data-product-id="@product.Id" data-role="quick-view" title="Quick View">
+                                <a class="btn btn-outline-secondary" href="/catalog/@product.Id" title="View details">
                                     <i class="bi bi-eye"></i>
-                                </button>
+                                </a>
+                                @if (User.IsInRole("customer"))
+                                {
+                                    <form asp-controller="Customer" asp-action="@(product.IsWishlisted ? "RemoveFromWishlist" : "AddToWishlist")" method="post">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="productId" value="@product.Id" />
+                                        <input type="hidden" name="returnUrl" value="@returnUrl" />
+                                        <button class="btn btn-outline-secondary" type="submit" title="Wishlist">
+                                            <i class="bi @(product.IsWishlisted ? "bi-heart-fill" : "bi-heart")"></i>
+                                        </button>
+                                    </form>
+                                }
                             </div>
                         </div>
                     </article>
@@ -91,10 +105,3 @@
         </div>
     }
 </section>
-
-@section Scripts {
-    <script>
-        window.perfumierReturnUrl = "@returnUrl";
-    </script>
-    <script src="/js/landing.js"></script>
-}

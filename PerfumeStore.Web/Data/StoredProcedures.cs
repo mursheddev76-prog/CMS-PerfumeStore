@@ -19,8 +19,12 @@ public static class StoredProcedures
     public const string DeliveryOptionUpsert = "sp_delivery_option_upsert";
 
     public const string AdminDashboardStats = "sp_admin_dashboard_get_stats";
+    public const string AdminOrdersGetRecent = "sp_admin_orders_get_recent";
+    public const string AdminCustomersGetTop = "sp_admin_customers_get_top";
+    public const string OrderReviewUpdate = "sp_order_review_update";
 
     public const string OrderCreate = "sp_order_create";
     public const string UserGetByUsername = "sp_user_get_by_username";
+    public const string CustomerOrdersGetByEmail = "sp_customer_orders_get_by_email";
+    public const string WishlistGetByUsername = "sp_customer_wishlist_get_by_username";
 }
-

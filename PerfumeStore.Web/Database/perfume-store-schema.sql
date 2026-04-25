@@ -29,11 +29,28 @@ create table if not exists payment_methods (
     id                      serial primary key,
     name                    varchar(80) not null,
     provider                varchar(80) not null,
+    payment_type            varchar(30) not null default 'manual',
+    partner_name            varchar(80),
     processing_fee          numeric(10,2) not null default 0,
     supports_installments   boolean not null default false,
+    account_title           varchar(120),
+    account_number          varchar(80),
+    bank_name               varchar(80),
+    iban                    varchar(80),
+    instructions            varchar(500),
+    requires_receipt        boolean not null default true,
     is_active               boolean not null default true,
     created_at              timestamptz not null default now()
 );
+
+alter table payment_methods add column if not exists payment_type varchar(30) not null default 'manual';
+alter table payment_methods add column if not exists partner_name varchar(80);
+alter table payment_methods add column if not exists account_title varchar(120);
+alter table payment_methods add column if not exists account_number varchar(80);
+alter table payment_methods add column if not exists bank_name varchar(80);
+alter table payment_methods add column if not exists iban varchar(80);
+alter table payment_methods add column if not exists instructions varchar(500);
+alter table payment_methods add column if not exists requires_receipt boolean not null default true;
 
 create table if not exists delivery_options (
     id              serial primary key,
@@ -71,6 +88,17 @@ create table if not exists orders (
     total               numeric(10,2) not null,
     created_at          timestamptz not null default now()
 );
+
+alter table orders
+    add column if not exists status varchar(30) not null default 'Processing';
+alter table orders
+    add column if not exists payment_status varchar(30) not null default 'Pending Review';
+alter table orders
+    add column if not exists payment_receipt_url varchar(512);
+alter table orders
+    add column if not exists payment_reference varchar(120);
+alter table orders
+    add column if not exists payment_review_notes varchar(300);
 
 create table if not exists order_items (
     order_id    int not null references orders(id) on delete cascade,
@@ -131,20 +159,42 @@ create or replace procedure sp_payment_method_upsert(
     p_id int,
     p_name varchar,
     p_provider varchar,
+    p_payment_type varchar,
+    p_partner_name varchar,
     p_processing_fee numeric,
     p_supports_installments boolean,
-    p_is_active boolean
+    p_is_active boolean,
+    p_account_title varchar,
+    p_account_number varchar,
+    p_bank_name varchar,
+    p_iban varchar,
+    p_instructions varchar,
+    p_requires_receipt boolean
 )
-language sql
+language plpgsql
 as $$
-    insert into payment_methods (id, name, provider, processing_fee, supports_installments, is_active)
-    values (p_id, p_name, p_provider, p_processing_fee, p_supports_installments, p_is_active)
-    on conflict (id) do update set
-        name = excluded.name,
-        provider = excluded.provider,
-        processing_fee = excluded.processing_fee,
-        supports_installments = excluded.supports_installments,
-        is_active = excluded.is_active;
+begin
+    if p_id is null or p_id = 0 then
+        insert into payment_methods (name, provider, payment_type, partner_name, processing_fee, supports_installments, is_active, account_title, account_number, bank_name, iban, instructions, requires_receipt)
+        values (p_name, p_provider, p_payment_type, p_partner_name, p_processing_fee, p_supports_installments, p_is_active, p_account_title, p_account_number, p_bank_name, p_iban, p_instructions, p_requires_receipt);
+    else
+        update payment_methods set
+            name = p_name,
+            provider = p_provider,
+            payment_type = p_payment_type,
+            partner_name = p_partner_name,
+            processing_fee = p_processing_fee,
+            supports_installments = p_supports_installments,
+            is_active = p_is_active,
+            account_title = p_account_title,
+            account_number = p_account_number,
+            bank_name = p_bank_name,
+            iban = p_iban,
+            instructions = p_instructions,
+            requires_receipt = p_requires_receipt
+        where id = p_id;
+    end if;
+end;
 $$;
 
 create or replace procedure sp_delivery_option_upsert(
@@ -155,16 +205,39 @@ create or replace procedure sp_delivery_option_upsert(
     p_estimated_days int,
     p_is_active boolean
 )
-language sql
+language plpgsql
 as $$
-    insert into delivery_options (id, name, description, fee, estimated_days, is_active)
-    values (p_id, p_name, p_description, p_fee, p_estimated_days, p_is_active)
-    on conflict (id) do update set
-        name = excluded.name,
-        description = excluded.description,
-        fee = excluded.fee,
-        estimated_days = excluded.estimated_days,
-        is_active = excluded.is_active;
+begin
+    if p_id is null or p_id = 0 then
+        insert into delivery_options (name, description, fee, estimated_days, is_active)
+        values (p_name, p_description, p_fee, p_estimated_days, p_is_active);
+    else
+        update delivery_options set
+            name = p_name,
+            description = p_description,
+            fee = p_fee,
+            estimated_days = p_estimated_days,
+            is_active = p_is_active
+        where id = p_id;
+    end if;
+end;
+$$;
+
+create or replace procedure sp_order_review_update(
+    p_order_number varchar,
+    p_status varchar,
+    p_payment_status varchar,
+    p_payment_review_notes varchar
+)
+language plpgsql
+as $$
+begin
+    update orders
+    set status = p_status,
+        payment_status = p_payment_status,
+        payment_review_notes = p_payment_review_notes
+    where order_number = p_order_number;
+end;
 $$;
 
 create or replace procedure sp_hero_content_upsert(
@@ -206,6 +279,10 @@ create or replace procedure sp_order_create(
     p_shipping_address varchar,
     p_payment_method_id int,
     p_delivery_option_id int,
+    p_status varchar,
+    p_payment_status varchar,
+    p_payment_receipt_url varchar,
+    p_payment_reference varchar,
     p_subtotal numeric,
     p_delivery_fee numeric,
     p_processing_fee numeric,
@@ -218,14 +295,29 @@ as $$
 declare
     v_order_id int;
 begin
+    if exists (
+        select 1
+        from unnest(p_items) as item
+        join products p on p.id = item.product_id
+        where item.quantity > p.stock_quantity
+    ) then
+        raise exception 'Insufficient stock for one or more items.';
+    end if;
+
     p_order_number := coalesce(p_order_number, concat('ORD-', to_char(clock_timestamp(), 'YYMMDDHH24MISSMS')));
-    insert into orders(order_number, customer_name, customer_email, shipping_address, payment_method_id, delivery_option_id, subtotal, delivery_fee, processing_fee, total)
-    values (p_order_number, p_customer_name, p_customer_email, p_shipping_address, p_payment_method_id, p_delivery_option_id, p_subtotal, p_delivery_fee, p_processing_fee, p_total)
+    insert into orders(order_number, customer_name, customer_email, shipping_address, payment_method_id, delivery_option_id, status, payment_status, payment_receipt_url, payment_reference, subtotal, delivery_fee, processing_fee, total)
+    values (p_order_number, p_customer_name, p_customer_email, p_shipping_address, p_payment_method_id, p_delivery_option_id, p_status, p_payment_status, p_payment_receipt_url, p_payment_reference, p_subtotal, p_delivery_fee, p_processing_fee, p_total)
     returning id into v_order_id;
 
     insert into order_items(order_id, product_id, quantity, unit_price)
     select v_order_id, item.product_id, item.quantity, item.unit_price
     from unnest(p_items) as item;
+
+    update products p
+    set stock_quantity = p.stock_quantity - item.quantity,
+        updated_at = now()
+    from unnest(p_items) as item
+    where p.id = item.product_id;
 end;
 $$;
 
@@ -386,7 +478,7 @@ Description varchar,
 language sql
 as $$ select Id,Name,Description,
 Is_Active
-IsActive from categories where is_active order by name; $$;
+IsActive from categories order by name; $$;
 
 
 
@@ -395,9 +487,17 @@ RETURNS TABLE (
     Id int,
     Name varchar,
     Provider varchar,
+    PaymentType varchar,
+    PartnerName varchar,
     ProcessingFee numeric,
     SupportsInstallments boolean,
-    IsActive boolean
+    IsActive boolean,
+    AccountTitle varchar,
+    AccountNumber varchar,
+    BankName varchar,
+    Iban varchar,
+    Instructions varchar,
+    RequiresReceipt boolean
 )
 LANGUAGE sql
 AS $$
@@ -405,9 +505,17 @@ AS $$
         pm.id AS Id,
         pm.name AS Name,
         pm.provider AS Provider,
+        pm.payment_type AS PaymentType,
+        pm.partner_name AS PartnerName,
         pm.processing_fee AS ProcessingFee,
         pm.supports_installments AS SupportsInstallments,
-        pm.is_active AS IsActive
+        pm.is_active AS IsActive,
+        pm.account_title AS AccountTitle,
+        pm.account_number AS AccountNumber,
+        pm.bank_name AS BankName,
+        pm.iban AS Iban,
+        pm.instructions AS Instructions,
+        pm.requires_receipt AS RequiresReceipt
     FROM payment_methods pm
     ORDER BY pm.provider;
 $$;
@@ -474,6 +582,83 @@ as $$
         (select count(*) from orders where total > 0) as PendingOrders;
 $$;
 
+create or replace function sp_admin_orders_get_recent()
+returns table(
+    OrderNumber varchar,
+    CustomerName varchar,
+    CustomerEmail varchar,
+    ShippingAddress varchar,
+    Status varchar,
+    PaymentStatus varchar,
+    PaymentMethod varchar,
+    PaymentMethodId int,
+    PaymentType varchar,
+    DeliveryOption varchar,
+    ItemCount int,
+    Total numeric,
+    CreatedAt timestamptz,
+    PaymentReceiptUrl varchar,
+    PaymentReference varchar,
+    PaymentReviewNotes varchar
+)
+language sql
+as $$
+    select
+        o.order_number as OrderNumber,
+        o.customer_name as CustomerName,
+        o.customer_email as CustomerEmail,
+        o.shipping_address as ShippingAddress,
+        o.status as Status,
+        o.payment_status as PaymentStatus,
+        pm.name as PaymentMethod,
+        pm.id as PaymentMethodId,
+        pm.payment_type as PaymentType,
+        d.name as DeliveryOption,
+        coalesce(sum(oi.quantity), 0)::int as ItemCount,
+        o.total as Total,
+        o.created_at as CreatedAt,
+        o.payment_receipt_url as PaymentReceiptUrl,
+        o.payment_reference as PaymentReference,
+        o.payment_review_notes as PaymentReviewNotes
+    from orders o
+    join payment_methods pm on pm.id = o.payment_method_id
+    join delivery_options d on d.id = o.delivery_option_id
+    left join order_items oi on oi.order_id = o.id
+    group by o.order_number, o.customer_name, o.customer_email, o.shipping_address, o.status, o.payment_status, pm.name, pm.id, pm.payment_type, d.name, o.total, o.created_at, o.payment_receipt_url, o.payment_reference, o.payment_review_notes
+    order by o.created_at desc
+    limit 12;
+$$;
+
+create or replace function sp_admin_customers_get_top()
+returns table(
+    FullName varchar,
+    Email varchar,
+    OrderCount int,
+    LifetimeValue numeric,
+    WishlistCount int,
+    LastOrderAt timestamptz
+)
+language sql
+as $$
+    select
+        nullif(u.full_name, '') as FullName,
+        u.username as Email,
+        count(o.id)::int as OrderCount,
+        coalesce(sum(o.total), 0)::numeric as LifetimeValue,
+        (
+            select count(*)
+            from customer_wishlist cw
+            where cw.user_id = u.id
+        )::int as WishlistCount,
+        max(o.created_at) as LastOrderAt
+    from app_users u
+    left join orders o on lower(o.customer_email) = lower(u.username)
+    where u.role = 'customer'
+    group by u.id, u.full_name, u.username
+    order by coalesce(sum(o.total), 0) desc, max(o.created_at) desc nulls last
+    limit 8;
+$$;
+
 
 
 --create or replace function sp_hero_content_get()
@@ -509,11 +694,29 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 create table if not exists app_users (
     id              serial primary key,
+    full_name       varchar(120) not null default '',
     username        varchar(80) not null unique,
     password_hash   text not null,
     role            varchar(20) not null default 'customer',
     is_active       boolean not null default true,
     created_at      timestamptz not null default now()
+);
+
+alter table app_users
+    add column if not exists full_name varchar(120) not null default '';
+
+update app_users
+set username = lower(trim(username))
+where username <> lower(trim(username));
+
+create unique index if not exists ix_app_users_username_lower
+    on app_users (lower(username));
+
+create table if not exists customer_wishlist (
+    user_id      int not null references app_users(id) on delete cascade,
+    product_id   int not null references products(id) on delete cascade,
+    created_at   timestamptz not null default now(),
+    primary key (user_id, product_id)
 );
 
 insert into app_users (username, password_hash, role)
@@ -525,17 +728,100 @@ create or replace function sp_user_get_by_username(
 )
 returns table (
     Id int,
+    FullName varchar,
     Username varchar,
     PasswordHash text,
-    Role varchar
+    Role varchar,
+    IsActive boolean,
+    CreatedAt timestamptz
 )
 language sql
 as $$
     select
         id,
+        full_name,
         username,
         password_hash,
-        role
+        role,
+        is_active,
+        created_at
     from app_users
-    where username = p_username and is_active;
+    where lower(username) = lower(trim(p_username)) and is_active;
+$$;
+
+create or replace function sp_customer_orders_get_by_email(
+    p_customer_email varchar
+)
+returns table (
+    OrderNumber varchar,
+    Status varchar,
+    PaymentStatus varchar,
+    PaymentMethod varchar,
+    DeliveryOption varchar,
+    EstimatedDays int,
+    ItemCount int,
+    Total numeric,
+    CreatedAt timestamptz,
+    PaymentReceiptUrl varchar,
+    PaymentReference varchar
+)
+language sql
+as $$
+    select
+        o.order_number as OrderNumber,
+        o.status as Status,
+        o.payment_status as PaymentStatus,
+        pm.name as PaymentMethod,
+        d.name as DeliveryOption,
+        d.estimated_days as EstimatedDays,
+        coalesce(sum(oi.quantity), 0)::int as ItemCount,
+        o.total as Total,
+        o.created_at as CreatedAt,
+        o.payment_receipt_url as PaymentReceiptUrl,
+        o.payment_reference as PaymentReference
+    from orders o
+    join payment_methods pm on pm.id = o.payment_method_id
+    join delivery_options d on d.id = o.delivery_option_id
+    left join order_items oi on oi.order_id = o.id
+    where lower(o.customer_email) = lower(trim(p_customer_email))
+    group by o.order_number, o.status, o.payment_status, pm.name, d.name, d.estimated_days, o.total, o.created_at, o.payment_receipt_url, o.payment_reference
+    order by o.created_at desc;
+$$;
+
+create or replace function sp_customer_wishlist_get_by_username(
+    p_username varchar
+)
+returns table (
+    Id int,
+    Name varchar,
+    Description varchar,
+    Price numeric,
+    DiscountPrice numeric,
+    ImageUrl varchar,
+    IsFeatured boolean,
+    IsTrending boolean,
+    CategoryId int,
+    CategoryName varchar,
+    StockQuantity int
+)
+language sql
+as $$
+    select
+        p.id as Id,
+        p.name as Name,
+        p.description as Description,
+        p.price as Price,
+        p.discount_price as DiscountPrice,
+        p.image_url as ImageUrl,
+        p.is_featured as IsFeatured,
+        p.is_trending as IsTrending,
+        p.category_id as CategoryId,
+        c.name as CategoryName,
+        p.stock_quantity as StockQuantity
+    from customer_wishlist cw
+    join app_users u on u.id = cw.user_id
+    join products p on p.id = cw.product_id
+    join categories c on c.id = p.category_id
+    where lower(u.username) = lower(trim(p_username))
+    order by cw.created_at desc;
 $$;

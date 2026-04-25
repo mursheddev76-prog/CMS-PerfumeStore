@@ -4,6 +4,8 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using System.Security.Claims;
 using PerfumeStore.Web.Data.Repositories;
+using Microsoft.AspNetCore.Authorization;
+using PerfumeStore.Web.Infrastructure;
 
 namespace PerfumeStore.Web.Controllers
 {
@@ -32,18 +34,27 @@ namespace PerfumeStore.Web.Controllers
             return View("CustomerLogin", model);
         }
 
+        [HttpGet]
+        [AllowAnonymous]
+        public IActionResult AccessDenied()
+        {
+            return View();
+        }
+
         [HttpPost]
+        [ValidateAntiForgeryToken]
         public async Task<IActionResult> Login(LoginViewModel model, CancellationToken cancellationToken)
         {
             if (ModelState.IsValid)
             {
-                if (string.IsNullOrWhiteSpace(model.Username) || string.IsNullOrWhiteSpace(model.Password))
+                var normalizedUsername = NormalizeUsername(model.Username);
+                if (string.IsNullOrWhiteSpace(normalizedUsername) || string.IsNullOrWhiteSpace(model.Password))
                 {
                     ModelState.AddModelError(string.Empty, "Username and password are required.");
                     return View(model.LoginType == "admin" ? "Login" : "CustomerLogin", model);
                 }
 
-                var user = await _commerceRepository.GetUserByUsernameAsync(model.Username, cancellationToken);
+                var user = await _commerceRepository.GetUserByUsernameAsync(normalizedUsername, cancellationToken);
 
                 if (user != null &&
                     !string.IsNullOrWhiteSpace(user.Username) &&
@@ -55,6 +66,8 @@ namespace PerfumeStore.Web.Controllers
                     {
                         new Claim(ClaimTypes.Name, user.Username),
                         new Claim(ClaimTypes.Role, user.Role),
+                        new Claim(ClaimTypes.Email, user.Username),
+                        new Claim(ClaimTypes.GivenName, user.FullName ?? user.Username),
                     };
 
                     var claimsIdentity = new ClaimsIdentity(
@@ -67,13 +80,13 @@ namespace PerfumeStore.Web.Controllers
                         new ClaimsPrincipal(claimsIdentity), 
                         authProperties);
 
-                    if (user.Role == "admin")
+                    if (AppRoles.StaffRoles.Contains(user.Role))
                     {
                         return RedirectToAction("Index", "Admin");
                     }
                     else
                     {
-                        return RedirectToAction("Index", "Landing");
+                        return RedirectToAction("Index", "Customer");
                     }
                 }
                 else
@@ -85,11 +98,56 @@ namespace PerfumeStore.Web.Controllers
             return View(model.LoginType == "admin" ? "Login" : "CustomerLogin", model);
         }
 
+        [HttpGet]
+        [AllowAnonymous]
+        public IActionResult Register()
+        {
+            return View(new RegisterViewModel());
+        }
+
+        [HttpPost]
+        [AllowAnonymous]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> Register(RegisterViewModel model, CancellationToken cancellationToken)
+        {
+            if (!ModelState.IsValid)
+            {
+                return View(model);
+            }
+
+            var normalizedEmail = NormalizeUsername(model.Email);
+            if (string.IsNullOrWhiteSpace(normalizedEmail))
+            {
+                ModelState.AddModelError(nameof(model.Email), "A valid email address is required.");
+                return View(model);
+            }
+
+            model.Email = normalizedEmail;
+
+            var existingUser = await _commerceRepository.GetUserByUsernameAsync(normalizedEmail, cancellationToken);
+            if (existingUser is not null)
+            {
+                ModelState.AddModelError(nameof(model.Email), "An account with this email already exists.");
+                return View(model);
+            }
+
+            var passwordHash = BCrypt.Net.BCrypt.HashPassword(model.Password);
+            await _commerceRepository.CreateUserAsync(model.FullName.Trim(), normalizedEmail, passwordHash, cancellationToken);
+
+            TempData["AuthMessage"] = "Your account has been created. Please sign in to continue.";
+            return RedirectToAction(nameof(Login), new { type = "customer" });
+        }
+
         public async Task<IActionResult> Logout()
         {
             await HttpContext.SignOutAsync(
                 CookieAuthenticationDefaults.AuthenticationScheme);
             return RedirectToAction("Index", "Landing");
         }
+
+        private static string NormalizeUsername(string? username) =>
+            string.IsNullOrWhiteSpace(username)
+                ? string.Empty
+                : username.Trim().ToLowerInvariant();
     }
 }

@@ -1,12 +1,14 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Npgsql;
+using PerfumeStore.Web.Infrastructure;
 using PerfumeStore.Web.Models.ViewModels;
 using PerfumeStore.Web.Services;
 
 namespace PerfumeStore.Web.Controllers;
 
 [Route("admin")]
-[Authorize(Policy = "Admin")]
+[Authorize(Policy = "StaffPortal")]
 public class AdminController : Controller
 {
     private readonly AdminService _adminService;
@@ -22,9 +24,31 @@ public class AdminController : Controller
         [FromQuery] int? productId,
         [FromQuery] int? paymentMethodId,
         [FromQuery] int? deliveryOptionId,
+        [FromQuery] int? userId,
+        [FromQuery] string? orderQuery,
+        [FromQuery] string? status,
+        [FromQuery] string? paymentStatus,
+        [FromQuery] int? orderPaymentMethodId,
+        [FromQuery] DateTime? dateFrom,
+        [FromQuery] DateTime? dateTo,
         CancellationToken cancellationToken)
     {
-        var vm = await _adminService.BuildDashboardAsync(categoryId, productId, paymentMethodId, deliveryOptionId, cancellationToken);
+        var vm = await _adminService.BuildDashboardAsync(
+            categoryId,
+            productId,
+            paymentMethodId,
+            deliveryOptionId,
+            userId,
+            new AdminOrderFiltersInput
+            {
+                Query = orderQuery,
+                Status = status,
+                PaymentStatus = paymentStatus,
+                PaymentMethodId = orderPaymentMethodId,
+                DateFrom = dateFrom,
+                DateTo = dateTo
+            },
+            cancellationToken);
         return View(vm);
     }
 
@@ -140,12 +164,141 @@ public class AdminController : Controller
         return RedirectToAction(nameof(Index));
     }
 
+    [HttpPost("orders/review")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> UpdateOrderStatus([Bind(Prefix = "OrderReviewForm")] OrderReviewInput input, CancellationToken cancellationToken)
+    {
+        if (!ModelState.IsValid)
+        {
+            return await ReturnDashboardWithErrorsAsync(cancellationToken, orderStatusForm: input);
+        }
+
+        await _adminService.UpdateOrderReviewAsync(input, cancellationToken);
+        TempData["AdminMessage"] = $"Order {input.OrderNumber} updated with {input.Status} / {input.PaymentStatus}.";
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost("users")]
+    [Authorize(Policy = "Admin")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SaveUser([Bind(Prefix = "UserForm")] UserManagementInput input, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(input.Password) && input.Id == 0)
+        {
+            ModelState.AddModelError("UserForm.Password", "Password is required for new users.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(input.Password) && input.Password.Length < 8)
+        {
+            ModelState.AddModelError("UserForm.Password", "Password must be at least 8 characters.");
+        }
+
+        if (!ModelState.IsValid)
+        {
+            return await ReturnDashboardWithErrorsAsync(cancellationToken, userForm: input);
+        }
+
+        await _adminService.SaveUserAsync(input, cancellationToken);
+        TempData["AdminMessage"] = input.Id == 0 ? "User created." : "User updated.";
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost("categories/{id:int}/toggle")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ToggleCategory(int id, [FromForm] bool isActive, CancellationToken cancellationToken)
+    {
+        await _adminService.SetCategoryActiveAsync(id, isActive, cancellationToken);
+        TempData["AdminMessage"] = $"Category {(isActive ? "activated" : "moved to inactive")}.";
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost("categories/{id:int}/delete")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> DeleteCategory(int id, CancellationToken cancellationToken)
+    {
+        return await ExecuteProtectedDeleteAsync(
+            () => _adminService.DeleteCategoryAsync(id, cancellationToken),
+            "Category deleted.",
+            "This category is linked to products. Mark it inactive instead of deleting it.");
+    }
+
+    [HttpPost("products/{id:int}/delete")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> DeleteProduct(int id, CancellationToken cancellationToken)
+    {
+        return await ExecuteProtectedDeleteAsync(
+            () => _adminService.DeleteProductAsync(id, cancellationToken),
+            "Product deleted.",
+            "This product is already used in orders or wishlists, so it cannot be deleted safely.");
+    }
+
+    [HttpPost("payments/{id:int}/toggle")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> TogglePayment(int id, [FromForm] bool isActive, CancellationToken cancellationToken)
+    {
+        await _adminService.SetPaymentMethodActiveAsync(id, isActive, cancellationToken);
+        TempData["AdminMessage"] = $"Payment method {(isActive ? "activated" : "moved to inactive")}.";
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost("payments/{id:int}/delete")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> DeletePayment(int id, CancellationToken cancellationToken)
+    {
+        return await ExecuteProtectedDeleteAsync(
+            () => _adminService.DeletePaymentMethodAsync(id, cancellationToken),
+            "Payment method deleted.",
+            "This payment method is already used by orders. Mark it inactive instead of deleting it.");
+    }
+
+    [HttpPost("delivery/{id:int}/toggle")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ToggleDelivery(int id, [FromForm] bool isActive, CancellationToken cancellationToken)
+    {
+        await _adminService.SetDeliveryOptionActiveAsync(id, isActive, cancellationToken);
+        TempData["AdminMessage"] = $"Delivery option {(isActive ? "activated" : "moved to inactive")}.";
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost("delivery/{id:int}/delete")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> DeleteDelivery(int id, CancellationToken cancellationToken)
+    {
+        return await ExecuteProtectedDeleteAsync(
+            () => _adminService.DeleteDeliveryOptionAsync(id, cancellationToken),
+            "Delivery option deleted.",
+            "This delivery option is already used by orders. Mark it inactive instead of deleting it.");
+    }
+
+    [HttpPost("users/{id:int}/toggle")]
+    [Authorize(Policy = "Admin")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ToggleUser(int id, [FromForm] bool isActive, CancellationToken cancellationToken)
+    {
+        await _adminService.SetUserActiveAsync(id, isActive, cancellationToken);
+        TempData["AdminMessage"] = $"User {(isActive ? "activated" : "deactivated")}.";
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost("users/{id:int}/delete")]
+    [Authorize(Policy = "Admin")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> DeleteUser(int id, CancellationToken cancellationToken)
+    {
+        return await ExecuteProtectedDeleteAsync(
+            () => _adminService.DeleteUserAsync(id, cancellationToken),
+            "User deleted.",
+            "This user could not be deleted because related records still depend on it.");
+    }
+
     private async Task<IActionResult> ReturnDashboardWithErrorsAsync(
         CancellationToken cancellationToken,
         CategoryInput? categoryForm = null,
         ProductInput? productForm = null,
         PaymentMethodInput? paymentForm = null,
-        DeliveryOptionInput? deliveryForm = null)
+        DeliveryOptionInput? deliveryForm = null,
+        OrderReviewInput? orderStatusForm = null,
+        UserManagementInput? userForm = null)
     {
         var vm = await _adminService.BuildDashboardAsync(cancellationToken);
         if (categoryForm is not null)
@@ -168,6 +321,36 @@ public class AdminController : Controller
             vm = _adminService.WithDeliveryForm(vm, deliveryForm);
         }
 
+        if (orderStatusForm is not null)
+        {
+            vm = _adminService.WithOrderStatusForm(vm, orderStatusForm);
+        }
+
+        if (userForm is not null)
+        {
+            vm = _adminService.WithUserForm(vm, userForm);
+        }
+
         return View("Index", vm);
+    }
+
+    private async Task<IActionResult> ExecuteProtectedDeleteAsync(
+        Func<Task> deleteAction,
+        string successMessage,
+        string foreignKeyMessage)
+    {
+        try
+        {
+            await deleteAction();
+            TempData["AdminMessage"] = successMessage;
+            TempData["AdminMessageIsError"] = false;
+        }
+        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.ForeignKeyViolation)
+        {
+            TempData["AdminMessage"] = foreignKeyMessage;
+            TempData["AdminMessageIsError"] = true;
+        }
+
+        return RedirectToAction(nameof(Index));
     }
 }

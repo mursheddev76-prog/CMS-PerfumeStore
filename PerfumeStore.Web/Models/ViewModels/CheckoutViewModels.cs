@@ -48,6 +48,9 @@ public class CheckoutRequest
     [Required]
     public int DeliveryOptionId { get; set; }
 
+    [StringLength(120)]
+    public string PaymentReference { get; set; } = string.Empty;
+
     public List<CheckoutLine> Items { get; set; } = new();
 }
 

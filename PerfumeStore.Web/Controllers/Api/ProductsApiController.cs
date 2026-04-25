@@ -17,10 +17,11 @@ public class ProductsApiController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> Get([FromQuery] int? id, [FromQuery] string? category, [FromQuery] string? q, CancellationToken cancellationToken)
     {
-        var (products, _) = await _catalogService.SearchAsync(category, q, cancellationToken);
+        var (products, _) = await _catalogService.SearchAsync(category, q, User.Identity?.Name, cancellationToken);
         if (id.HasValue)
         {
-            return Ok(products.Where(product => product.Id == id.Value));
+            var product = products.FirstOrDefault(item => item.Id == id.Value);
+            return product is null ? NotFound() : Ok(product);
         }
 
         return Ok(products);

@@ -1,10 +1,27 @@
-﻿<!DOCTYPE html>
-<html lang="en">
+﻿@using System.Linq
+@using PerfumeStore.Web.Infrastructure
+@using PerfumeStore.Web.Models.ViewModels
+@{
+    var cartSessionKey = CartSessionHelper.GetCartKey(User, Context.Session);
+    var cartCount = Context.Session.GetJson<List<CheckoutLine>>(cartSessionKey)?.Sum(item => item.Quantity) ?? 0;
+    var isStaffUser = User.Identity?.IsAuthenticated == true && AppRoles.StaffRoles.Any(User.IsInRole);
+}
+<!DOCTYPE html>
+<html lang="en" data-theme="light" data-bs-theme="light">
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="ASP.NET 8 perfume commerce stack with dynamic admin controls." />
     <title>@ViewData["Title"] - Perfumier</title>
+    <script>
+        (() => {
+            const storedTheme = localStorage.getItem("perfumier-theme");
+            const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+            const theme = storedTheme || (prefersDark ? "dark" : "light");
+            document.documentElement.setAttribute("data-theme", theme);
+            document.documentElement.setAttribute("data-bs-theme", theme);
+        })();
+    </script>
 
     <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
@@ -41,17 +58,27 @@
                         <li class="nav-item">
                             <a class="nav-link" asp-controller="Checkout" asp-action="Index">Checkout</a>
                         </li>
-                        <li class="nav-item">
-                            <a class="nav-link" asp-controller="Admin" asp-action="Index">Admin</a>
-                        </li>
+                        @if (isStaffUser)
+                        {
+                            <li class="nav-item">
+                                <a class="nav-link" asp-controller="Admin" asp-action="Index">Admin</a>
+                            </li>
+                        }
                     </ul>
 
                     <!-- Right Buttons -->
                     <div class="d-flex gap-2">
+                        <button class="btn btn-outline-secondary" type="button" id="theme-toggle" aria-label="Toggle dark mode">
+                            <i class="bi bi-moon-stars" id="theme-toggle-icon"></i>
+                        </button>
 
                         @if (User.Identity?.IsAuthenticated == true)
                         {
                             <span class="navbar-text">Hello, @User.Identity?.Name!</span>
+                            @if (User.IsInRole("customer"))
+                            {
+                                <a class="btn btn-outline-secondary" asp-controller="Customer" asp-action="Index">My Account</a>
+                            }
                             <a class="btn btn-outline-dark" asp-controller="Account" asp-action="Logout">Logout</a>
                         }
                         else
@@ -62,8 +89,18 @@
                             </button>
                         }
 
-                        <a class="btn btn-outline-secondary" href="/catalog">Shop</a>
-                        <a class="btn btn-dark" href="/admin">Launch Console</a>
+                        <a class="btn btn-outline-secondary position-relative" href="/checkout">
+                            Cart
+                            @if (cartCount > 0)
+                            {
+                                <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-dark">@cartCount</span>
+                            }
+                        </a>
+                        <a class="btn btn-dark" href="/catalog">Shop</a>
+                        @if (isStaffUser)
+                        {
+                            <a class="btn btn-outline-dark" href="/admin">Launch Console</a>
+                        }
                     </div>
 
                 </div>
@@ -85,7 +122,8 @@
 
             <div class="footer-links d-flex gap-3">
                 <a href="/catalog" class="text-secondary text-decoration-none">Catalog</a>
-                <a href="/admin" class="text-secondary text-decoration-none">Admin</a>
+                <a href="/checkout" class="text-secondary text-decoration-none">Checkout</a>
+                <a href="/account" class="text-secondary text-decoration-none">Account</a>
                 <a href="https://learn.microsoft.com/aspnet/core" class="text-secondary text-decoration-none">Docs</a>
             </div>
         </div>

@@ -50,7 +50,7 @@
 
     <div class="row g-4">
         <div class="col-lg-7">
-            <form asp-action="PlaceOrder" method="post" class="checkout-form">
+            <form asp-action="PlaceOrder" method="post" class="checkout-form" enctype="multipart/form-data">
                 @Html.AntiForgeryToken()
 
                 <div asp-validation-summary="ModelOnly" class="alert alert-danger"></div>
@@ -97,7 +97,7 @@
                             @foreach (var option in Model.DeliveryOptions)
                             {
                                 <div class="form-check">
-                                    <input class="form-check-input" type="radio" asp-for="Request.DeliveryOptionId" value="@option.Id" id="delivery_@option.Id" />
+                                    <input class="form-check-input js-delivery-option" type="radio" asp-for="Request.DeliveryOptionId" value="@option.Id" id="delivery_@option.Id" data-fee="@option.Fee" />
                                     <label class="form-check-label" for="delivery_@option.Id">
                                         <strong>@option.Name</strong>
                                         <span class="text-muted ms-2">— @option.Description</span>
@@ -128,12 +128,13 @@
                             @foreach (var method in Model.PaymentMethods)
                             {
                                 <div class="form-check">
-                                    <input class="form-check-input" type="radio" asp-for="Request.PaymentMethodId" value="@method.Id" id="payment_@method.Id" />
+                                    <input class="form-check-input js-payment-option" type="radio" asp-for="Request.PaymentMethodId" value="@method.Id" id="payment_@method.Id" data-fee="@method.ProcessingFee" data-type="@method.PaymentType" data-requires-receipt="@method.RequiresReceipt.ToString().ToLowerInvariant()" data-bank-name="@method.BankName" data-account-title="@method.AccountTitle" data-account-number="@method.AccountNumber" data-iban="@method.Iban" data-instructions="@method.Instructions" data-partner-name="@method.PartnerName" />
                                     <label class="form-check-label" for="payment_@method.Id">
                                         <strong>@method.Name</strong>
                                         <span class="text-muted ms-2">— @method.Provider</span>
                                         <br>
                                         <small class="text-muted">
+                                            <span class="text-uppercase me-2">@method.PaymentType.Replace("_", " ")</span>
                                             <i class="bi bi-percent me-1"></i>Processing Fee: @method.ProcessingFee.ToString("C")
                                         </small>
                                     </label>
@@ -141,6 +142,47 @@
                             }
                         </div>
                         <span asp-validation-for="Request.PaymentMethodId" class="text-danger small"></span>
+
+                        <div class="manual-payment-panel mt-4 d-none" id="manual-payment-panel">
+                            <div class="alert alert-warning mb-3">
+                                <strong>Manual bank transfer selected.</strong>
+                                Complete payment to the account below and upload your receipt so admin can review it.
+                            </div>
+                            <div class="manual-payment-card">
+                                <div class="row g-3">
+                                    <div class="col-md-6">
+                                        <label class="form-label">Bank</label>
+                                        <input id="manual-bank-name" class="form-control" readonly />
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label">Account Title</label>
+                                        <input id="manual-account-title" class="form-control" readonly />
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label">Account Number</label>
+                                        <input id="manual-account-number" class="form-control" readonly />
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label">IBAN</label>
+                                        <input id="manual-iban" class="form-control" readonly />
+                                    </div>
+                                    <div class="col-12">
+                                        <label asp-for="Request.PaymentReference" class="form-label">Payment Reference</label>
+                                        <input asp-for="Request.PaymentReference" class="form-control" placeholder="Transaction ID, branch ref, or transfer note" />
+                                        <span asp-validation-for="Request.PaymentReference" class="text-danger small"></span>
+                                    </div>
+                                    <div class="col-12">
+                                        <label class="form-label">Admin Instructions</label>
+                                        <textarea id="manual-instructions" class="form-control" rows="3" readonly></textarea>
+                                    </div>
+                                    <div class="col-12" id="payment-receipt-wrapper">
+                                        <label class="form-label">Upload Payment Receipt</label>
+                                        <input type="file" name="paymentReceipt" id="payment-receipt" class="form-control" accept="image/*,.pdf" />
+                                        <small class="text-muted">Upload your deposit slip, screenshot, or PDF receipt for admin review.</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -183,6 +225,7 @@
                                     <strong class="d-block">@item.Name</strong>
                                     <small class="text-muted d-block mb-2">@item.Category</small>
                                     <form asp-action="UpdateCart" method="post" class="d-flex gap-2 align-items-center">
+                                        @Html.AntiForgeryToken()
                                         <input type="hidden" name="productId" value="@item.ProductId" />
                                         <input type="number" name="quantity" value="@item.Quantity" min="0" max="99" class="form-control form-control-sm" style="max-width: 96px;" />
                                         <button class="btn btn-sm btn-outline-dark" type="submit">Update</button>
@@ -196,6 +239,7 @@
                                     }
                                     <small class="text-muted d-block">@item.UnitPrice.ToString("C") each</small>
                                     <form asp-action="RemoveFromCart" method="post" class="mt-2">
+                                        @Html.AntiForgeryToken()
                                         <input type="hidden" name="productId" value="@item.ProductId" />
                                         <button class="btn btn-sm btn-link text-danger p-0" type="submit">Remove</button>
                                     </form>
@@ -207,19 +251,19 @@
                 <div class="card-footer bg-light">
                     <div class="d-flex justify-content-between mb-3 pb-3 border-bottom">
                         <span>Subtotal</span>
-                        <strong>@Model.Subtotal.ToString("C")</strong>
+                        <strong id="checkout-subtotal" data-amount="@Model.Subtotal">@Model.Subtotal.ToString("C")</strong>
                     </div>
                     <div class="d-flex justify-content-between mb-3">
                         <span>Estimated Delivery</span>
-                        <strong class="text-muted">@Model.DeliveryFee.ToString("C")</strong>
+                        <strong class="text-muted" id="checkout-delivery">@Model.DeliveryFee.ToString("C")</strong>
                     </div>
                     <div class="d-flex justify-content-between mb-3">
                         <span>Payment Processing</span>
-                        <strong class="text-muted">@Model.ProcessingFee.ToString("C")</strong>
+                        <strong class="text-muted" id="checkout-processing">@Model.ProcessingFee.ToString("C")</strong>
                     </div>
                     <div class="d-flex justify-content-between align-items-center pt-3 border-top">
                         <span class="fw-bold">Total (Estimated)</span>
-                        <strong class="h5 mb-0">@Model.EstimatedTotal.ToString("C")</strong>
+                        <strong class="h5 mb-0" id="checkout-total">@Model.EstimatedTotal.ToString("C")</strong>
                     </div>
                     <small class="text-muted d-block mt-3 mb-0">
                         <i class="bi bi-info-circle me-1"></i>Totals reflect the currently selected delivery and payment options.
@@ -227,6 +271,7 @@
                     @if (Model.HasCart)
                     {
                         <form asp-action="ClearCart" method="post" class="mt-3">
+                            @Html.AntiForgeryToken()
                             <button class="btn btn-outline-secondary btn-sm w-100" type="submit">Clear Cart</button>
                         </form>
                     }

@@ -18,6 +18,8 @@ public class AdminService
         int? productId,
         int? paymentMethodId,
         int? deliveryOptionId,
+        int? userId,
+        AdminOrderFiltersInput? orderFilters,
         CancellationToken cancellationToken)
     {
         var statsTask = _repository.GetDashboardStatsAsync(cancellationToken);
@@ -26,8 +28,14 @@ public class AdminService
         var paymentMethodsTask = _repository.GetPaymentMethodsAsync(cancellationToken);
         var deliveryOptionsTask = _repository.GetDeliveryOptionsAsync(cancellationToken);
         var heroTask = _repository.GetHeroContentAsync(cancellationToken);
+        var effectiveFilters = orderFilters ?? new AdminOrderFiltersInput();
+        var recentOrdersTask = HasActiveOrderFilters(effectiveFilters)
+            ? _repository.SearchOrdersAsync(effectiveFilters, cancellationToken)
+            : _repository.GetRecentOrdersAsync(cancellationToken);
+        var topCustomersTask = _repository.GetTopCustomersAsync(cancellationToken);
+        var usersTask = _repository.GetUsersAsync(cancellationToken);
 
-        await Task.WhenAll(statsTask, productsTask, categoriesTask, paymentMethodsTask, deliveryOptionsTask, heroTask);
+        await Task.WhenAll(statsTask, productsTask, categoriesTask, paymentMethodsTask, deliveryOptionsTask, heroTask, recentOrdersTask, topCustomersTask, usersTask);
 
         var hero = heroTask.Result;
         var products = productsTask.Result;
@@ -38,6 +46,7 @@ public class AdminService
         var selectedProduct = products.FirstOrDefault(p => p.Id == productId);
         var selectedPaymentMethod = paymentMethods.FirstOrDefault(p => p.Id == paymentMethodId);
         var selectedDeliveryOption = deliveryOptions.FirstOrDefault(d => d.Id == deliveryOptionId);
+        var selectedUser = usersTask.Result.FirstOrDefault(u => u.Id == userId);
 
         return new AdminDashboardViewModel
         {
@@ -46,6 +55,35 @@ public class AdminService
             Categories = categories,
             PaymentMethods = paymentMethods,
             DeliveryOptions = deliveryOptions,
+            RecentOrders = recentOrdersTask.Result.Select(order => new AdminOrderSummaryViewModel
+            {
+                OrderNumber = order.OrderNumber,
+                CustomerName = order.CustomerName,
+                CustomerEmail = order.CustomerEmail,
+                ShippingAddress = order.ShippingAddress,
+                Status = order.Status,
+                PaymentStatus = order.PaymentStatus,
+                PaymentMethod = order.PaymentMethod,
+                PaymentMethodId = order.PaymentMethodId,
+                PaymentType = order.PaymentType,
+                DeliveryOption = order.DeliveryOption,
+                ItemCount = order.ItemCount,
+                Total = order.Total,
+                CreatedAt = order.CreatedAt,
+                PaymentReceiptUrl = order.PaymentReceiptUrl,
+                PaymentReference = order.PaymentReference,
+                PaymentReviewNotes = order.PaymentReviewNotes
+            }).ToList(),
+            TopCustomers = topCustomersTask.Result.Select(customer => new AdminCustomerSummaryViewModel
+            {
+                FullName = string.IsNullOrWhiteSpace(customer.FullName) ? "Customer" : customer.FullName,
+                Email = customer.Email,
+                OrderCount = customer.OrderCount,
+                LifetimeValue = customer.LifetimeValue,
+                WishlistCount = customer.WishlistCount,
+                LastOrderAt = customer.LastOrderAt
+            }).ToList(),
+            Users = usersTask.Result,
             Hero = new HeroSectionInput
             {
                 Title = hero.Title,
@@ -87,9 +125,17 @@ public class AdminService
                     Id = selectedPaymentMethod.Id,
                     Name = selectedPaymentMethod.Name,
                     Provider = selectedPaymentMethod.Provider,
+                    PaymentType = selectedPaymentMethod.PaymentType,
+                    PartnerName = selectedPaymentMethod.PartnerName,
                     ProcessingFee = selectedPaymentMethod.ProcessingFee,
                     SupportsInstallments = selectedPaymentMethod.SupportsInstallments,
-                    IsActive = selectedPaymentMethod.IsActive
+                    IsActive = selectedPaymentMethod.IsActive,
+                    AccountTitle = selectedPaymentMethod.AccountTitle,
+                    AccountNumber = selectedPaymentMethod.AccountNumber,
+                    BankName = selectedPaymentMethod.BankName,
+                    Iban = selectedPaymentMethod.Iban,
+                    Instructions = selectedPaymentMethod.Instructions,
+                    RequiresReceipt = selectedPaymentMethod.RequiresReceipt
                 },
             DeliveryForm = selectedDeliveryOption is null
                 ? new DeliveryOptionInput()
@@ -101,12 +147,32 @@ public class AdminService
                     Fee = selectedDeliveryOption.Fee,
                     EstimatedDays = selectedDeliveryOption.EstimatedDays,
                     IsActive = selectedDeliveryOption.IsActive
+                },
+            OrderReviewForm = recentOrdersTask.Result.FirstOrDefault() is { } order
+                ? new OrderReviewInput
+                {
+                    OrderNumber = order.OrderNumber,
+                    Status = order.Status,
+                    PaymentStatus = order.PaymentStatus,
+                    PaymentReviewNotes = order.PaymentReviewNotes
                 }
+                : new OrderReviewInput(),
+            UserForm = selectedUser is null
+                ? new UserManagementInput()
+                : new UserManagementInput
+                {
+                    Id = selectedUser.Id,
+                    FullName = selectedUser.FullName,
+                    Username = selectedUser.Username,
+                    Role = selectedUser.Role,
+                    IsActive = selectedUser.IsActive
+                },
+            OrderFilters = effectiveFilters
         };
     }
 
     public Task<AdminDashboardViewModel> BuildDashboardAsync(CancellationToken cancellationToken) =>
-        BuildDashboardAsync(null, null, null, null, cancellationToken);
+        BuildDashboardAsync(null, null, null, null, null, null, cancellationToken);
 
     public Task SaveHeroAsync(HeroSectionInput input, CancellationToken cancellationToken) =>
         _repository.UpsertHeroContentAsync(new HeroContent(
@@ -137,9 +203,17 @@ public class AdminService
             input.Id,
             input.Name,
             input.Provider,
+            input.PaymentType,
+            input.PartnerName,
             input.ProcessingFee,
             input.SupportsInstallments,
-            input.IsActive), cancellationToken);
+            input.IsActive,
+            input.AccountTitle,
+            input.AccountNumber,
+            input.BankName,
+            input.Iban,
+            input.Instructions,
+            input.RequiresReceipt), cancellationToken);
 
     public Task SaveDeliveryOptionAsync(DeliveryOptionInput input, CancellationToken cancellationToken) =>
         _repository.UpsertDeliveryOptionAsync(new DeliveryOption(
@@ -156,6 +230,39 @@ public class AdminService
             input.Name,
             input.Description ?? string.Empty,
             input.IsActive), cancellationToken);
+
+    public Task UpdateOrderReviewAsync(OrderReviewInput input, CancellationToken cancellationToken) =>
+        _repository.UpdateOrderReviewAsync(input.OrderNumber, input.Status, input.PaymentStatus, input.PaymentReviewNotes, cancellationToken);
+
+    public Task SaveUserAsync(UserManagementInput input, CancellationToken cancellationToken) =>
+        _repository.UpsertUserAsync(input, cancellationToken);
+
+    public Task SetCategoryActiveAsync(int id, bool isActive, CancellationToken cancellationToken) =>
+        _repository.SetCategoryActiveAsync(id, isActive, cancellationToken);
+
+    public Task DeleteCategoryAsync(int id, CancellationToken cancellationToken) =>
+        _repository.DeleteCategoryAsync(id, cancellationToken);
+
+    public Task DeleteProductAsync(int id, CancellationToken cancellationToken) =>
+        _repository.DeleteProductAsync(id, cancellationToken);
+
+    public Task SetPaymentMethodActiveAsync(int id, bool isActive, CancellationToken cancellationToken) =>
+        _repository.SetPaymentMethodActiveAsync(id, isActive, cancellationToken);
+
+    public Task DeletePaymentMethodAsync(int id, CancellationToken cancellationToken) =>
+        _repository.DeletePaymentMethodAsync(id, cancellationToken);
+
+    public Task SetDeliveryOptionActiveAsync(int id, bool isActive, CancellationToken cancellationToken) =>
+        _repository.SetDeliveryOptionActiveAsync(id, isActive, cancellationToken);
+
+    public Task DeleteDeliveryOptionAsync(int id, CancellationToken cancellationToken) =>
+        _repository.DeleteDeliveryOptionAsync(id, cancellationToken);
+
+    public Task SetUserActiveAsync(int id, bool isActive, CancellationToken cancellationToken) =>
+        _repository.SetUserActiveAsync(id, isActive, cancellationToken);
+
+    public Task DeleteUserAsync(int id, CancellationToken cancellationToken) =>
+        _repository.DeleteUserAsync(id, cancellationToken);
 
     public AdminDashboardViewModel WithCategoryForm(AdminDashboardViewModel model, CategoryInput input)
     {
@@ -180,4 +287,24 @@ public class AdminService
         model.DeliveryForm = input;
         return model;
     }
+
+    public AdminDashboardViewModel WithOrderStatusForm(AdminDashboardViewModel model, OrderReviewInput input)
+    {
+        model.OrderReviewForm = input;
+        return model;
+    }
+
+    public AdminDashboardViewModel WithUserForm(AdminDashboardViewModel model, UserManagementInput input)
+    {
+        model.UserForm = input;
+        return model;
+    }
+
+    private static bool HasActiveOrderFilters(AdminOrderFiltersInput filters) =>
+        !string.IsNullOrWhiteSpace(filters.Query)
+        || !string.IsNullOrWhiteSpace(filters.Status)
+        || !string.IsNullOrWhiteSpace(filters.PaymentStatus)
+        || filters.PaymentMethodId.HasValue
+        || filters.DateFrom.HasValue
+        || filters.DateTo.HasValue;
 }
