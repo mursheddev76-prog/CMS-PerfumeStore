@@ -416,3 +416,8 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+.idea/.idea.PerfumeStore/.idea/.gitignore
+.idea/.idea.PerfumeStore/.idea/.name
+.idea/.idea.PerfumeStore/.idea/encodings.xml
+.idea/.idea.PerfumeStore/.idea/indexLayout.xml
+.idea/.idea.PerfumeStore/.idea/vcs.xml
